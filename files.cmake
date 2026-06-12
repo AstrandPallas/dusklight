@@ -1438,6 +1438,8 @@ set(DUSK_FILES
 		src/dusk/autosave.cpp
         src/dusk/coop/coop_manager.cpp
         src/dusk/coop/coop_manager.hpp
+        src/dusk/coop/coop_overlay.cpp
+        src/dusk/coop/coop_overlay.hpp
         src/dusk/http/http.hpp
         src/dusk/io.cpp
         src/dusk/layout.cpp

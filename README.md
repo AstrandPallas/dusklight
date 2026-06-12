@@ -23,16 +23,17 @@ The architecture is built for up to 4 players; this release activates 2.
 
 Hearts, rupees, and items are shared — you live and die as a team.
 
+For full details — screen layout, automatic hiding during cutscenes and rides, rejoining after loads, and recovery — see [the co-op guide](docs/coop.md).
+
 ## Status: pre-alpha
 
 This is an early, playable preview. Player 1 is always "the" player for world logic; Player 2 is a guest. Current limitations:
 
-- **Cutscenes, menus, and mounts don't handle P2 yet** — Player 2 is *not* hidden during cutscenes or horseback sequences and may behave oddly during them. Leave (hold START) before story moments for best results.
 - Player 2 cannot use Z-targeting/lock-on, X/Y items, or transform; sword, shield, roll, and grab all work.
-- Player 2 disappears on area transitions and auto-rejoin is not in yet — press START again after a load.
 - Enemies primarily target Player 1 (they'll still hurt P2 on contact).
 - Some screen-space effects (bloom, depth of field, motion blur, sun flare) are reduced or anchored to Player 1's view while the screen is split.
-- If Player 2 falls somewhere unrecoverable, leave and rejoin to warp back to Player 1.
+
+During cutscenes, menus, and rides, Player 2 is hidden automatically and returns afterwards; after area transitions Player 2 rejoins automatically. If Player 2 falls or strays too far, they are warped back to Player 1.
 
 Bug reports are welcome on the issues page — please include where you were and what both players were doing.
 

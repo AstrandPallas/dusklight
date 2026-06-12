@@ -260,6 +260,43 @@ fps[corner=br] {
     right: 12dp;
 }
 
+player-tag {
+    position: absolute;
+    left: 10dp;
+    z-index: 99;
+    font-family: "Fira Sans Condensed";
+    font-size: 16dp;
+    font-weight: bold;
+    color: #E0DBC8;
+    background-color: rgba(21, 22, 16, 65%);
+    border: 1dp #92875B;
+    border-radius: 6dp;
+    padding: 2dp 9dp;
+    pointer-events: none;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.5s linear-in-out;
+}
+
+player-tag.shown {
+    opacity: 0.85;
+}
+
+/* Top-left of each split half: P1 owns the top half, P2 the bottom. */
+#coop-tag-p1 {
+    top: 10dp;
+}
+
+/* FPS counter is in the window's top-left corner — sit below it. */
+#coop-tag-p1.below-fps {
+    top: 58dp;
+}
+
+#coop-tag-p2 {
+    top: 50%;
+    margin-top: 10dp;
+}
+
 logo {
     position: absolute;
     width: 100dp;

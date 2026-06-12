@@ -4,6 +4,7 @@
 #include "dusk/achievements.h"
 #include "dusk/action_bindings.h"
 #include "controller_config.hpp"
+#include "dusk/coop/coop_overlay.hpp"
 #include "dusk/livesplit.h"
 #include "dusk/speedrun.h"
 #include "fmt/format.h"
@@ -31,6 +32,8 @@ const Rml::String kDocumentSource = R"RML(
 </head>
 <body>
     <fps id="fps" />
+    <player-tag id="coop-tag-p1">P1</player-tag>
+    <player-tag id="coop-tag-p2">P2</player-tag>
     <speedrun-timer id="speedrun-timer">
         <speedrun-rta id="speedrun-rta" />
         <speedrun-igt id="speedrun-igt" />
@@ -296,6 +299,9 @@ void Overlay::update() {
             mFpsLastUpdate = 0;
         }
     }
+
+    // Per-viewport P1/P2 labels while split-screen co-op is active.
+    dusk::coop::drawPlayerTags(mDocument);
 
 #if !(defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IOS && !TARGET_OS_MACCATALYST))
     if (getSettings().game.speedrunMode && getSettings().game.liveSplitEnabled) {
