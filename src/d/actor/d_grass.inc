@@ -11,6 +11,7 @@
 #include "d/d_camera.h"
 #include "f_op/f_op_camera_mng.h"
 
+#include "dusk/coop.h"
 #include "dusk/frame_interpolation.h"
 
 const u16 l_M_Hijiki00TEX__width = 31;
@@ -573,6 +574,22 @@ void dGrass_packet_c::draw() {
     GXColorS10 spA0 = {0, 0, 0, 0};
     GXColorS10 sp98 = {0, 0, 0, 0};
 
+#ifdef TARGET_PC
+    // coop: update() bakes m_modelMtx against camera 0's view once per sim
+    // frame, but this packet is replayed once per split window — re-express
+    // the baked matrix in THIS window's view (curView * inv(cam0View)) so
+    // grass doesn't render glued to camera 0's view space in P2's window
+    Mtx coopReView;
+    bool useCoopReView = false;
+    if (dusk::coop::isSplitActive()) {
+        camera_process_class* coopCam0 = dComIfGp_getCamera(0);
+        if (coopCam0 != NULL) {
+            cMtx_concat(j3dSys.getViewMtx(), coopCam0->view.invViewMtx, coopReView);
+            useCoopReView = true;
+        }
+    }
+#endif
+
     dGrass_room_c* sp54 = m_room;
 
     f32 var_f31 = g_env_light.getDaytime();
@@ -759,6 +776,10 @@ void dGrass_packet_c::draw() {
                     Mtx grass_mtx;
                     if (dusk::frame_interp::lookup_replacement(reinterpret_cast<const void*>(&var_r29->m_modelMtx), grass_mtx)) {
                         cMtx_concat(j3dSys.getViewMtx(), grass_mtx, grass_mtx);
+                        GXLoadPosMtxImm(grass_mtx, 0);
+                    } else if (useCoopReView) {
+                        // coop: un-bake camera 0's view, re-bake this window's
+                        cMtx_concat(coopReView, var_r29->m_modelMtx, grass_mtx);
                         GXLoadPosMtxImm(grass_mtx, 0);
                     } else
 #endif

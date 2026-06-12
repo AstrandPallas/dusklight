@@ -4,7 +4,9 @@
 #include "d/d_s_play.h"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 #include "SSystem/SComponent/c_counter.h"
+#include "f_op/f_op_camera_mng.h"
 
+#include "dusk/coop.h"
 #include "dusk/frame_interpolation.h"
 
 const u16 l_J_Ohana00_64TEX__width = 63;
@@ -618,6 +620,22 @@ void dFlower_packet_c::draw() {
     GXSETARRAY(GX_VA_CLR0, &l_flowerColor, sizeof(l_flowerColor), sizeof(GXColor), true);
     GXSETARRAY(GX_VA_TEX0, &l_flowerTexCoord, sizeof(l_flowerTexCoord), 8, true);
 
+#ifdef TARGET_PC
+    // coop: update() bakes m_modelMtx against camera 0's view once per sim
+    // frame, but this packet is replayed once per split window — re-express
+    // the baked matrix in THIS window's view (curView * inv(cam0View)) so
+    // flowers don't render glued to camera 0's view space in P2's window
+    Mtx coopReView;
+    bool useCoopReView = false;
+    if (dusk::coop::isSplitActive()) {
+        camera_process_class* coopCam0 = dComIfGp_getCamera(0);
+        if (coopCam0 != NULL) {
+            cMtx_concat(j3dSys.getViewMtx(), coopCam0->view.invViewMtx, coopReView);
+            useCoopReView = true;
+        }
+    }
+#endif
+
     GXColor sp64;
     dFlower_room_c* sp5C = m_room;
 
@@ -698,6 +716,10 @@ void dFlower_packet_c::draw() {
                     Mtx flower_mtx;
                     if (dusk::frame_interp::lookup_replacement(&sp44->m_modelMtx, flower_mtx)) {
                         cMtx_concat(j3dSys.getViewMtx(), flower_mtx, flower_mtx);
+                        GXLoadPosMtxImm(flower_mtx, 0);
+                    } else if (useCoopReView) {
+                        // coop: un-bake camera 0's view, re-bake this window's
+                        cMtx_concat(coopReView, sp44->m_modelMtx, flower_mtx);
                         GXLoadPosMtxImm(flower_mtx, 0);
                     } else
 #endif
@@ -857,6 +879,10 @@ void dFlower_packet_c::draw() {
                     Mtx flower_mtx;
                     if (dusk::frame_interp::lookup_replacement(&sp34->m_modelMtx, flower_mtx)) {
                         cMtx_concat(j3dSys.getViewMtx(), flower_mtx, flower_mtx);
+                        GXLoadPosMtxImm(flower_mtx, 0);
+                    } else if (useCoopReView) {
+                        // coop: un-bake camera 0's view, re-bake this window's
+                        cMtx_concat(coopReView, sp34->m_modelMtx, flower_mtx);
                         GXLoadPosMtxImm(flower_mtx, 0);
                     } else
 #endif

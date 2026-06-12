@@ -2754,6 +2754,19 @@ int mDoGph_Painter() {
         }
     }
 
+#if TARGET_PC
+    // coop: the window loop leaves j3dSys holding the LAST window's (P2's)
+    // view for the rest of the frame and the start of the next one — restore
+    // P1's view so world systems that read j3dSys before the next camera
+    // draw don't track P2
+    if (coopSplit) {
+        camera_process_class* coopCam0 = dComIfGp_getCamera(0);
+        if (coopCam0 != NULL) {
+            j3dSys.setViewMtx(coopCam0->view.viewMtx);
+        }
+    }
+#endif
+
     #if DEBUG
     fapGm_HIO_c::startCpuTimer();
     #endif
