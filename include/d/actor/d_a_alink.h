@@ -4565,6 +4565,14 @@ public:
     void handleQuickTransform();
     bool checkAimContext();
 
+    // coop: the Link/Wolf J3DModelData comes from the refcounted shared
+    // archive, so its joint->MtxCalc bindings (changeModelDataDirect) are
+    // shared between player instances — last writer wins. Demo-archive anm
+    // resources are shared objects too, with frame state living ON them.
+    // Each instance re-binds its own blend tables and re-asserts its own
+    // frames right before its model consumes them.
+    void reassertAnmFrames();
+
     void onIronBallChainInterpCallback();
 
     static const int IRON_BALL_CHAIN_COUNT = 102;

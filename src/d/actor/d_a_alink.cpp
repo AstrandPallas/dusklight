@@ -4983,7 +4983,14 @@ int daAlink_c::create() {
         } else {
             attention_info.position.y = current.pos.y + 150.0f;
         }
+#if TARGET_PC
+        // coop: guests are not lock-on candidates (P1's reticle must not
+        // acquire P2) — dAttention's select_attention skips actors with
+        // flags == 0; enemies track P1 via the player singleton, unaffected
+        attention_info.flags = isGuest() ? 0 : -1;
+#else
         attention_info.flags = -1;
+#endif
 
         if (!dComIfGp_getEventManager().dataLoaded()) {
             return cPhs_INIT_e;
@@ -18278,6 +18285,13 @@ int daAlink_c::execute() {
         }
 
         setMatrix();
+#if TARGET_PC
+        // coop: see reassertAnmFrames — debug-move path still poses the
+        // model from the shared joint bindings
+        if (dusk::coop::playerCount() > 1) {
+            reassertAnmFrames();
+        }
+#endif
         mpLinkModel->calc();
 
         if (!checkWolf()) {
@@ -18624,6 +18638,14 @@ int daAlink_c::execute() {
                 handBgCheck();
 
                 field_0x30c8 = mBodyAngle.y >> 1;
+#if TARGET_PC
+                // coop: see reassertAnmFrames — shared modelData joint
+                // bindings and shared demo anm frames must be re-asserted
+                // before this instance's model calc consumes them
+                if (dusk::coop::playerCount() > 1) {
+                    reassertAnmFrames();
+                }
+#endif
                 modelCalc(mpLinkModel);
 
                 if (field_0x2fcb != 0) {
@@ -18675,6 +18697,14 @@ int daAlink_c::execute() {
 
                 wolfFootBgCheck();
                 setWolfTailAngle();
+#if TARGET_PC
+                // coop: see reassertAnmFrames — shared modelData joint
+                // bindings and shared demo anm frames must be re-asserted
+                // before this instance's model calc consumes them
+                if (dusk::coop::playerCount() > 1) {
+                    reassertAnmFrames();
+                }
+#endif
                 modelCalc(mpLinkModel);
                 checkWolfUseAbility();
 

@@ -1,3 +1,4 @@
+#include "JSystem/J3DGraphAnimator/J3DModelData.h"
 #include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_midna.h"
 #include "d/d_meter2.h"
@@ -173,5 +174,59 @@ bool daAlink_c::checkAimContext() {
         return itemButton() && mItemVar0.field_0x3018 == 2;
     default:
         return false;
+    }
+}
+
+void daAlink_c::reassertAnmFrames() {
+    // Both player instances render the same refcounted J3DModelData, and
+    // changeModelDataDirect()/changeModelDataDirectWolf() store the
+    // per-instance blend tables (field_0x1f20/field_0x1f24) on its SHARED
+    // joints — whoever ran it last (normally the guest, created second) owns
+    // the bindings, so the other Link's skeleton gets posed from the wrong
+    // player's anim packs. Re-bind this instance's tables right before this
+    // instance's model calc consumes them (mirror of the binding sites in
+    // d_a_alink_swindow.inc, including the status-window NULL state).
+    if (!checkNoResetFlg2(FLG2_STATUS_WINDOW_DRAW) && field_0x064C != NULL) {
+        if (checkWolf()) {
+            field_0x064C->getJointNodePointer(0)->setMtxCalc(field_0x1f20);
+            field_0x064C->getJointNodePointer(3)->setMtxCalc(field_0x1f24);
+            field_0x064C->getJointNodePointer(15)->setMtxCalc(field_0x1f20);
+        } else {
+            field_0x064C->getJointNodePointer(0)->setMtxCalc(field_0x1f20);
+            field_0x064C->getJointNodePointer(1)->setMtxCalc(field_0x1f24);
+            field_0x064C->getJointNodePointer(16)->setMtxCalc(field_0x1f20);
+        }
+    }
+
+    // Anim objects from demo archives (daPy_anmHeap_c::loadData with
+    // mArcNo != 0xFFFF) are shared resource objects; frame state lives ON
+    // them, so the other instance's allAnimePlay() stomps it. Re-assert our
+    // frames from the per-instance frame ctrls. Mirrors allAnimePlay()'s
+    // traversal: upper packs 0/1 alias the under packs when no separate
+    // upper anim is set — their frame is owned by the under ctrl then, so
+    // skip them exactly like allAnimePlay() does.
+    J3DAnmTransform* under0 = getNowAnmPackUnder(UNDER_0);
+    J3DAnmTransform* under1 = getNowAnmPackUnder(UNDER_1);
+    J3DAnmTransform* upper0 = getNowAnmPackUpper(UPPER_0);
+    J3DAnmTransform* upper1 = getNowAnmPackUpper(UPPER_1);
+
+    for (int i = 0; i < 3; i++) {
+        J3DAnmTransform* under = getNowAnmPackUnder((daAlink_UNDER)i);
+        if (under != NULL) {
+            under->setFrame(mUnderFrameCtrl[i].getFrame());
+        }
+    }
+
+    if (upper0 != NULL && upper0 != under0) {
+        upper0->setFrame(mUpperFrameCtrl[0].getFrame());
+    }
+
+    if (upper1 != NULL && upper1 != under1) {
+        upper1->setFrame(mUpperFrameCtrl[1].getFrame());
+    }
+
+    J3DAnmTransform* upper2 = getNowAnmPackUpper(UPPER_2);
+    if (upper2 != NULL) {
+        upper2->setFrame(mUpperFrameCtrl[2].getFrame());
     }
 }
