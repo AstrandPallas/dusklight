@@ -957,8 +957,8 @@ void daAlink_c::endDemoMode() {
                    checkMagneBootsOn())
         {
             if (isDemoTypeStart && (mProcID == PROC_MOVE || mProcID == PROC_WOLF_MOVE)) {
-                mStickValue = mDoCPd_c::getStickValue(PAD_1);
-                mStickAngle = mDoCPd_c::getStickAngle(PAD_1) + 0x8000;
+                mStickValue = mDoCPd_c::getStickValue(mPlayerNo);
+                mStickAngle = mDoCPd_c::getStickAngle(mPlayerNo) + 0x8000;
                 mMoveAngle = mStickAngle + dCam_getControledAngleY(dComIfGp_getCamera(field_0x317c));
                 mNormalSpeed = speedF;
                 commonCheckNextAction(0);

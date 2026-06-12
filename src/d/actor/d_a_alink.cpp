@@ -53,6 +53,7 @@
 
 #if TARGET_PC
 #include "dusk/action_bindings.h"
+#include "dusk/coop.h"
 #include "dusk/frame_interpolation.h"
 #include "dusk/settings.h"
 #include "res/Object/Alink.h"
@@ -4901,6 +4902,12 @@ int daAlink_c::create() {
                           && current.pos.y > 7500.0f;
 
     if (!bgWaitFlg) {
+#if TARGET_PC
+        {
+            int guestNo = dusk::coop::guestPlayerNo(fopAcM_GetID(this));
+            mPlayerNo = guestNo < 0 ? 0 : (u8)guestNo;
+        }
+#endif
         #if DEBUG
         if (g_playerKind == 2) {
             dComIfGs_setSelectEquipClothes(dItemNo_WEAR_CASUAL_e);
@@ -4921,8 +4928,18 @@ int daAlink_c::create() {
             dComIfGs_setSelectEquipClothes(dItemNo_WEAR_KOKIRI_e);
         }
 
+#if TARGET_PC
+        if (!isGuest()) {
+            dComIfGp_setPlayer(0, this);
+            dComIfGp_setLinkPlayer(this);
+        } else {
+            // player slot n → camera n
+            dComIfGp_setPlayerInfo(mPlayerNo, this, mPlayerNo);
+        }
+#else
         dComIfGp_setPlayer(0, this);
         dComIfGp_setLinkPlayer(this);
+#endif
         fopAcM_setStageLayer(&LEAFDRAW_BASE(this));
 
         if (sceneMode == 7) {
@@ -4931,7 +4948,13 @@ int daAlink_c::create() {
             current.angle.y = shape_angle.y;
         }
 
-        if ((
+        if (
+#if TARGET_PC
+            // guests must not run dComIfGs_Wolf_Change_Check() (story-state
+            // read/write) — they always fall through to the plain branches
+            !isGuest() &&
+#endif
+            ((
                 (
                     !checkBossOctaIealRoom()
                     #if DEBUG
@@ -4948,7 +4971,7 @@ int daAlink_c::create() {
                 startPoint == -4
             )
             || sceneMode == 9
-            )
+            ))
         {
             attention_info.position.set(current.pos.x + cM_ssin(shape_angle.y) * 70.0f,
                                          current.pos.y + 80.0f,
@@ -4989,7 +5012,11 @@ int daAlink_c::create() {
         }
 
         mAttention = dComIfGp_getAttention();
+#if TARGET_PC
+        field_0x317c = dComIfGp_getPlayerCameraID(mPlayerNo);
+#else
         field_0x317c = dComIfGp_getPlayerCameraID(0);
+#endif
 
         playerInit();
         bgWaitFlg = TRUE;
@@ -9326,9 +9353,9 @@ void daAlink_c::setPlayerPosAndAngle(Mtx i_mtx) {
 #if DEBUG
 BOOL daAlink_c::checkDebugMoveInput() {
     if (mDoCPd_c::isConnect(PAD_3)) {
-        return mDoCPd_c::getHoldB(PAD_1)
-                && mDoCPd_c::getAnalogR(PAD_1) > 0.8f
-                && mDoCPd_c::getTrigA(PAD_1);
+        return mDoCPd_c::getHoldB(mPlayerNo)
+                && mDoCPd_c::getAnalogR(mPlayerNo) > 0.8f
+                && mDoCPd_c::getTrigA(mPlayerNo);
     }
 
     return FALSE;
@@ -9451,8 +9478,8 @@ void daAlink_c::setStickData() {
             mStickValue = JMAFastSqrt(SQUARE(mg_rod->getRodStickX()) + SQUARE(mg_rod->getRodStickY()));
             mStickAngle = cM_atan2s(-mg_rod->getRodStickX(), mg_rod->getRodStickY());
         } else {
-            mStickValue = mDoCPd_c::getStickValue(PAD_1);
-            mStickAngle = mDoCPd_c::getStickAngle3D(PAD_1) - -0x8000;
+            mStickValue = mDoCPd_c::getStickValue(mPlayerNo);
+            mStickAngle = mDoCPd_c::getStickAngle3D(mPlayerNo) - -0x8000;
         }
 
         mMoveValue = mStickValue;
@@ -9478,47 +9505,47 @@ void daAlink_c::setStickData() {
             field_0x2fb9 = 1;
         }
 
-        if (mDoCPd_c::getTrigB(PAD_1)) {
+        if (mDoCPd_c::getTrigB(mPlayerNo)) {
             mItemTrigger |= (daAlink_ITEM_BTN)BTN_B;
         }
-        if (mDoCPd_c::getTrigA(PAD_1)) {
+        if (mDoCPd_c::getTrigA(mPlayerNo)) {
             mItemTrigger |= (daAlink_ITEM_BTN)BTN_A;
         }
-        if (mDoCPd_c::getTrigX(PAD_1)) {
+        if (mDoCPd_c::getTrigX(mPlayerNo)) {
             mItemTrigger |= (daAlink_ITEM_BTN)BTN_X;
         }
-        if (mDoCPd_c::getTrigY(PAD_1)) {
+        if (mDoCPd_c::getTrigY(mPlayerNo)) {
             mItemTrigger |= (daAlink_ITEM_BTN)BTN_Y;
         }
-        if (mDoCPd_c::getTrigZ(PAD_1)) {
+        if (mDoCPd_c::getTrigZ(mPlayerNo)) {
             mItemTrigger |= (daAlink_ITEM_BTN)BTN_Z;
         }
-        if (mDoCPd_c::getTrigL(PAD_1)) {
+        if (mDoCPd_c::getTrigL(mPlayerNo)) {
             mItemTrigger |= (daAlink_ITEM_BTN)BTN_L;
         }
-        if (mDoCPd_c::getTrigLockR(PAD_1)) {
+        if (mDoCPd_c::getTrigLockR(mPlayerNo)) {
             mItemTrigger |= (daAlink_ITEM_BTN)BTN_R;
         }
 
-        if (mDoCPd_c::getHoldA(PAD_1)) {
+        if (mDoCPd_c::getHoldA(mPlayerNo)) {
             mItemButton |= (daAlink_ITEM_BTN)BTN_A;
         }
-        if (mDoCPd_c::getHoldB(PAD_1)) {
+        if (mDoCPd_c::getHoldB(mPlayerNo)) {
             mItemButton |= (daAlink_ITEM_BTN)BTN_B;
         }
-        if (mDoCPd_c::getHoldX(PAD_1)) {
+        if (mDoCPd_c::getHoldX(mPlayerNo)) {
             mItemButton |= (daAlink_ITEM_BTN)BTN_X;
         }
-        if (mDoCPd_c::getHoldY(PAD_1)) {
+        if (mDoCPd_c::getHoldY(mPlayerNo)) {
             mItemButton |= (daAlink_ITEM_BTN)BTN_Y;
         }
-        if (mDoCPd_c::getHoldZ(PAD_1)) {
+        if (mDoCPd_c::getHoldZ(mPlayerNo)) {
             mItemButton |= (daAlink_ITEM_BTN)BTN_Z;
         }
-        if (mDoCPd_c::getHoldL(PAD_1)) {
+        if (mDoCPd_c::getHoldL(mPlayerNo)) {
             mItemButton |= (daAlink_ITEM_BTN)BTN_L;
         }
-        if (mDoCPd_c::getHoldLockR(PAD_1)) {
+        if (mDoCPd_c::getHoldLockR(mPlayerNo)) {
             mItemButton |= (daAlink_ITEM_BTN)BTN_R;
         }
 
@@ -11525,7 +11552,7 @@ int daAlink_c::orderZTalk() {
 
         if (midnaTalkTrigger()
 #if DEBUG
-            && (!mDoCPd_c::getHoldL(PAD_1) || !mDoCPd_c::getHoldR(PAD_1))
+            && (!mDoCPd_c::getHoldL(mPlayerNo) || !mDoCPd_c::getHoldR(mPlayerNo))
 #endif
            )
         {
@@ -18172,9 +18199,9 @@ int daAlink_c::execute() {
         } else {
             f32 moveSpeed;
 #if TARGET_PC
-            if (mDoCPd_c::getHoldZ(PAD_1)) {
+            if (mDoCPd_c::getHoldZ(mPlayerNo)) {
 #else
-            if (mDoCPd_c::getHoldLockR(PAD_1)) {
+            if (mDoCPd_c::getHoldLockR(mPlayerNo)) {
 #endif
                 moveSpeed = 100.0f;
             } else {
@@ -18182,14 +18209,14 @@ int daAlink_c::execute() {
             }
 
 #if TARGET_PC
-            f32 cStickY = mDoCPd_c::getSubStickY(PAD_1);
+            f32 cStickY = mDoCPd_c::getSubStickY(mPlayerNo);
             if (cStickY > 0.3f || cStickY < -0.3f) {
                 current.pos.y += moveSpeed * cStickY;
             }
 #else
-            if (mDoCPd_c::getHoldY(PAD_1)) {
+            if (mDoCPd_c::getHoldY(mPlayerNo)) {
                 current.pos.y += moveSpeed;
-            } else if (mDoCPd_c::getHoldX(PAD_1)) {
+            } else if (mDoCPd_c::getHoldX(mPlayerNo)) {
                 current.pos.y -= moveSpeed;
             }
 #endif
@@ -19899,8 +19926,15 @@ daAlink_c::~daAlink_c() {
 
     dKy_plight_cut(&mMagneBootsPlight);
 
-    dComIfGp_setPlayer(0, NULL);
-    dComIfGp_setLinkPlayer(NULL);
+#if TARGET_PC
+    if (isGuest()) {
+        dComIfGp_setPlayerInfo(getPlayerNo(), NULL, 0);
+    } else
+#endif
+    {
+        dComIfGp_setPlayer(0, NULL);
+        dComIfGp_setLinkPlayer(NULL);
+    }
 }
 
 static int daAlink_Delete(daAlink_c* i_this) {

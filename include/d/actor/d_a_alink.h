@@ -4369,6 +4369,14 @@ public:
     /* 0x03174 */ int mGroundCode;
     /* 0x03178 */ int field_0x3178;
     /* 0x0317C */ int field_0x317c;
+#if TARGET_PC
+    // coop: player index 0-3. One index drives the pad channel (PAD_1+n == n),
+    // the player-info slot, and the camera slot. Nonzero = guest instance,
+    // which skips singleton registration and world-state writes.
+    u8 mPlayerNo = 0;
+    bool isGuest() const { return mPlayerNo != 0; }
+    int getPlayerNo() const { return mPlayerNo; }
+#endif
     /* 0x03180 */ int field_0x3180;
     /* 0x03184 */ int mAlinkStaffId;
     /* 0x03188 */ int mStartEventID;

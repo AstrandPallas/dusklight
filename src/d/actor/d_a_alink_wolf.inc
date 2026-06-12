@@ -4102,7 +4102,7 @@ int daAlink_c::procWolfHowlDemo() {
     } else if (field_0x347c > 1.5f) {
         field_0x347c -= 1.0f;
     } else {
-        bool isHowl = mDoCPd_c::getHoldA(PAD_1) != false;
+        bool isHowl = mDoCPd_c::getHoldA(mPlayerNo) != false;
         if (mProcVar4.field_0x3010 != 0 && mProcVar2.field_0x300c != 0) {
             isHowl = false;
         }
@@ -4150,7 +4150,7 @@ int daAlink_c::procWolfHowlDemo() {
         }
 
         s16 var_r25 = mProcVar3.field_0x300e;
-        f32 stick_y = mDoCPd_c::getStickY(PAD_1);
+        f32 stick_y = mDoCPd_c::getStickY(mPlayerNo);
         mProcVar3.field_0x300e = mZ2WolfHowlMgr.startWolfHowlSound(0.0f, stick_y, isHowl, 0.0f);
         s16 var_r26_2 = 0;
 

@@ -33,7 +33,7 @@ void daAlink_c::handleWolfHowl() {
             return;
         }
 
-        mDoCPd_c::getCpadInfo(PAD_1).mPressedButtonFlags = 0;
+        mDoCPd_c::getCpadInfo(mPlayerNo).mPressedButtonFlags = 0;
 
         // Ensure that the Z Button is not dimmed
         if (meterDrawPtr->getButtonZAlpha() != 1.f) {
@@ -93,7 +93,7 @@ void daAlink_c::handleQuickTransform() {
         return;
     }
 
-    mDoCPd_c::getCpadInfo(PAD_1).mPressedButtonFlags = 0;
+    mDoCPd_c::getCpadInfo(mPlayerNo).mPressedButtonFlags = 0;
 
     // Don't allow quick transform while in the STAR tent.
     if (checkStageName("R_SP161")) {
