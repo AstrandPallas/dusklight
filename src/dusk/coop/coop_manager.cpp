@@ -98,10 +98,30 @@ static void despawnGuest(int playerNo) {
 
 void tick() {
     if (!getSettings().game.coopEnabled) {
+        // restore before despawning: despawnGuest drops s_state to Solo, which
+        // would skip the Active check
         if (s_state == State::Active) {
             restoreSingleWindow();
         }
-        s_state = State::Disabled;
+        // despawn any live guest before going Disabled — once Disabled, tick()
+        // returns up here every frame and the actor would outlive the manager.
+        // A guest still in its multi-frame create phase can't be deleted yet
+        // (fopAcM_delete no-ops on creating procs, and clearing s_guestProcID
+        // would make the in-flight create re-identify as P1 — same hazard the
+        // hold-START despawn path guards against), so hold off Disabled until
+        // it finishes and despawn on a later tick.
+        bool stillCreating = false;
+        for (int i = 0; i < kMaxPlayers - 1; i++) {
+            if (s_guestProcID[i] == kNoProcID) continue;
+            if (getGuestActor(i + 1) == NULL && !isGuestGone(i + 1)) {
+                stillCreating = true;
+                continue;
+            }
+            despawnGuest(i + 1);
+        }
+        if (!stillCreating) {
+            s_state = State::Disabled;
+        }
         return;
     }
     if (s_state == State::Disabled) {

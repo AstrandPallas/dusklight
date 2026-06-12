@@ -2939,7 +2939,7 @@ cXyz* daAlink_c::getNeckAimPos(cXyz* param_0, int* param_1, int param_2) {
         || mProcID == PROC_GOAT_STROKE)
     {
         look_actor = field_0x280c.getActor();
-    } else if (dComIfGp_checkPlayerStatus0(0, 0x10)) {
+    } else if (dComIfGp_checkPlayerStatus0(mPlayerNo, 0x10)) {
         if (mProcID != PROC_NOD && mProcID != PROC_EYE_AWAY && mProcID != PROC_GLARE) {
             look_actor = fopAcM_getTalkEventPartner(this);
             if (look_actor != NULL) {
@@ -3019,7 +3019,7 @@ cXyz* daAlink_c::getNeckAimPos(cXyz* param_0, int* param_1, int param_2) {
     }
 
     if (!checkEventRun()) {
-        if (dComIfGp_checkPlayerStatus1(0, 0x02010000)) {
+        if (dComIfGp_checkPlayerStatus1(mPlayerNo, 0x02010000)) {
             if (mSight.getDrawFlg()) {
                 return mSight.getPosP();
             } else {
@@ -3210,7 +3210,7 @@ s16 daAlink_c::getNeckAimAngle(cXyz* param_0, s16* param_1, s16* param_2, s16* p
 
             s16 spC;
             s16 spA;
-            if (dComIfGp_checkPlayerStatus1(0, 0x02000000)) {
+            if (dComIfGp_checkPlayerStatus1(mPlayerNo, 0x02000000)) {
                 if (field_0x3020 == 1) {
                     spC = -0x1000;
                     spA = mpHIO->mBasic.m.mHeadMaxTurnHorizontal;
@@ -5050,12 +5050,24 @@ int daAlink_c::create() {
     }
 
     if (portalActor != NULL) {
-        dComIfGp_getEvent()->setPtD(portalActor);
+#if TARGET_PC
+        // guests must not retarget the event manager's warp-portal pointer
+        if (!isGuest())
+#endif
+        {
+            dComIfGp_getEvent()->setPtD(portalActor);
+        }
     }
 
     bgWaitFlg = FALSE;
 
-    dComIfGs_setRestartRoom(current.pos, shape_angle.y, getStartRoomNo());
+#if TARGET_PC
+    // guests must not move the save-scoped death/void respawn point
+    if (!isGuest())
+#endif
+    {
+        dComIfGs_setRestartRoom(current.pos, shape_angle.y, getStartRoomNo());
+    }
     field_0x3780 = current.pos;
     mLinkAcch.ClrGndThinCellingOff();
 
@@ -5118,8 +5130,15 @@ int daAlink_c::create() {
     }
 
     if (checkCarryStartLightBallA() || checkCarryStartLightBallB()) {
-        setForceGrab((fopAc_ac_c*)fopAcIt_Judge((fopAcIt_JudgeFunc)daAlink_searchLightBall, NULL),
-                     1, 1);
+#if TARGET_PC
+        // the carry-start light ball is a single shared actor — a guest
+        // grabbing it too would steal the carry from P1
+        if (!isGuest())
+#endif
+        {
+            setForceGrab((fopAc_ac_c*)fopAcIt_Judge((fopAcIt_JudgeFunc)daAlink_searchLightBall, NULL),
+                         1, 1);
+        }
     }
 
     #if DEBUG
@@ -5128,20 +5147,39 @@ int daAlink_c::create() {
     l_jumpTop = 0.0f;
     #endif
 
-    fopAcM_create(fpcNm_MIDNA_e, midna_prm, &current.pos, fopAcM_GetRoomNo(this), &shape_angle, NULL, -1);
-    checkSetNpcTks(&current.pos, fopAcM_GetRoomNo(this), 1);
-
-    if (startPoint == -4 && dComIfGp_TargetWarpPt_get() != 0xFF && !dComIfGp_TransportWarp_check()) {
-        daTagMhint_c::createPortalWarpMissTag(0xBBE, fopAcM_GetID(this));
+#if TARGET_PC
+    // Midna is a singleton (daPy_py_c::m_midnaActor) and checkSetNpcTks spawns
+    // the dungeon-warp Ooccoo — both world spawns belong to P1's create only
+    if (!isGuest())
+#endif
+    {
+        fopAcM_create(fpcNm_MIDNA_e, midna_prm, &current.pos, fopAcM_GetRoomNo(this), &shape_angle, NULL, -1);
+        checkSetNpcTks(&current.pos, fopAcM_GetRoomNo(this), 1);
     }
 
-    if (dStage_stagInfo_GetSaveTbl(dComIfGp_getStage()->getStagInfo()) == dStage_SaveTbl_LV2) {
-        if (!dComIfGs_isItemFirstBit(dItemNo_HYLIA_SHIELD_e) && !dComIfGs_isItemFirstBit(dItemNo_SHIELD_e) &&
-            !dComIfGs_isItemFirstBit(dItemNo_WOOD_SHIELD_e))
+    if (startPoint == -4 && dComIfGp_TargetWarpPt_get() != 0xFF && !dComIfGp_TransportWarp_check()) {
+#if TARGET_PC
+        // spawns a Tag_Mhint hint actor — one per warp arrival, owned by P1
+        if (!isGuest())
+#endif
         {
-            fopAcM_onSwitch(this, 0x6F);
-        } else {
-            fopAcM_offSwitch(this, 0x6F);
+            daTagMhint_c::createPortalWarpMissTag(0xBBE, fopAcM_GetID(this));
+        }
+    }
+
+#if TARGET_PC
+    // writes stage switch 0x6F (world switch state) — P1's create owns it
+    if (!isGuest())
+#endif
+    {
+        if (dStage_stagInfo_GetSaveTbl(dComIfGp_getStage()->getStagInfo()) == dStage_SaveTbl_LV2) {
+            if (!dComIfGs_isItemFirstBit(dItemNo_HYLIA_SHIELD_e) && !dComIfGs_isItemFirstBit(dItemNo_SHIELD_e) &&
+                !dComIfGs_isItemFirstBit(dItemNo_WOOD_SHIELD_e))
+            {
+                fopAcM_onSwitch(this, 0x6F);
+            } else {
+                fopAcM_offSwitch(this, 0x6F);
+            }
         }
     }
 
@@ -5603,7 +5641,7 @@ void daAlink_c::setBodyPartPos() {
     } else {
         cMtx_multVec(mpLinkModel->getAnmMtx(field_0x30b4), &localEye, &eyePos);
 
-        if (dComIfGp_checkPlayerStatus0(0, 0x2000) && !dComIfGp_checkPlayerStatus1(0, 0x02010000) && (!checkModeFlg(0x40000) || !checkNoResetFlg0(FLG0_SWIM_UP)) && !dComIfGp_checkPlayerStatus0(0, 0x08000000)) {
+        if (dComIfGp_checkPlayerStatus0(mPlayerNo, 0x2000) && !dComIfGp_checkPlayerStatus1(mPlayerNo, 0x02010000) && (!checkModeFlg(0x40000) || !checkNoResetFlg0(FLG0_SWIM_UP)) && !dComIfGp_checkPlayerStatus0(mPlayerNo, 0x08000000)) {
             mDoMtx_stack_c::transS(current.pos.x, field_0x3834.y, current.pos.z);
             concatMagneBootMtx();
             mDoMtx_stack_c::ZXYrotM(field_0x310a, field_0x310c, 0);
@@ -5719,9 +5757,9 @@ void daAlink_c::setAttentionPos() {
         }
     } else if (mProcID == PROC_HOOKSHOT_FLY) {
         attention_info.position = eyePos;
-    } else if (dComIfGp_checkPlayerStatus1(0, 0x02000000)) {
+    } else if (dComIfGp_checkPlayerStatus1(mPlayerNo, 0x02000000)) {
         attention_info.position.set(current.pos.x + (100.0f * cM_ssin(shape_angle.y)), -50.0f + current.pos.y, current.pos.z + (100.0f * cM_scos(shape_angle.y)));
-    } else if (dComIfGp_checkPlayerStatus1(0, 0x10000)) {
+    } else if (dComIfGp_checkPlayerStatus1(mPlayerNo, 0x10000)) {
         attention_info.position.set(current.pos.x, -100.0f + current.pos.y, current.pos.z);
     } else if (checkModeFlg(0x800)) {
         attention_info.position = current.pos;
@@ -9254,7 +9292,7 @@ bool daAlink_c::getSlidePolygon(cM3dGPla* o_tripla) {
             && ((mGroundCode != 8 && (mGndPolySpecialCode == 1 || (o_tripla->mNormal.y < field_0x3470 && mGndPolySpecialCode != 2)))
                 || (mGndPolySpecialCode == 5 && !checkWolf() && (!checkInputOnR() || mProcID == PROC_SLIDE) && (o_tripla->mNormal.y < cM_scos(field_0x3122)))
                 || (!checkEquipHeavyBoots()
-                    && !dComIfGp_checkPlayerStatus0(0, 0x100)
+                    && !dComIfGp_checkPlayerStatus0(mPlayerNo, 0x100)
                     && checkLv2MiddleBossBgRide(movebg_actorName)
                     && (o_tripla->mNormal.y < cM_scos(cM_deg2s(mpHIO->mSlide.m.mLV2MinibossFloorSlideAngle)))
                     )
@@ -9618,11 +9656,11 @@ void daAlink_c::setAtnList() {
     field_0x27f8 = NULL;
 
     if (checkEventRun() || checkAttentionLock() || checkInputOnR()) {
-        dComIfGp_clearPlayerStatus0(0, 0x400000);
+        dComIfGp_clearPlayerStatus0(mPlayerNo, 0x400000);
         offNoResetFlg3(FLG3_COPY_ROD_THROW_AFTER);
     } else {
         if (mThrowBoomerangAcKeep.getActor() == NULL) {
-            dComIfGp_clearPlayerStatus0(0, 0x400000);
+            dComIfGp_clearPlayerStatus0(mPlayerNo, 0x400000);
         }
         if (mCopyRodAcKeep.getActor() == NULL || getCopyRodControllActor() != NULL) {
             offNoResetFlg3(FLG3_COPY_ROD_THROW_AFTER);
@@ -9641,7 +9679,7 @@ void daAlink_c::setAtnList() {
     } else if (mProcID == PROC_CUT_FINISH && field_0x280c.getActor() != NULL) {
         mTargetedActor = field_0x280c.getActor();
         field_0x27f4 = mTargetedActor;
-    } else if (dComIfGp_checkPlayerStatus0(0, 0x400000)) {
+    } else if (dComIfGp_checkPlayerStatus0(mPlayerNo, 0x400000)) {
         mTargetedActor = mThrowBoomerangAcKeep.getActor();
         field_0x27f4 = mTargetedActor;
     } else if (checkNoResetFlg3(FLG3_COPY_ROD_THROW_AFTER)) {
@@ -10679,11 +10717,11 @@ BOOL daAlink_c::checkWaitAction() {
         return procHorseWaitInit();
     }
 
-    if (dComIfGp_checkPlayerStatus1(0, 0x10000)) {
+    if (dComIfGp_checkPlayerStatus1(mPlayerNo, 0x10000)) {
         return procHookshotRoofWaitInit(0, mCargoCarryAcKeep.getActor(), 0);
     }
 
-    if (dComIfGp_checkPlayerStatus1(0, 0x02000000)) {
+    if (dComIfGp_checkPlayerStatus1(mPlayerNo, 0x02000000)) {
         return procHookshotWallWaitInit(0, 0, 0);
     }
 
@@ -11220,7 +11258,7 @@ int daAlink_c::checkItemChangeAutoAction() {
 }
 
 void daAlink_c::setFastShotTimer() {
-    if (!dComIfGp_checkPlayerStatus0(0, 0x2000)) {
+    if (!dComIfGp_checkPlayerStatus0(mPlayerNo, 0x2000)) {
         mFastShotTime = mpHIO->mItem.m.mItemFPTransitionTimer;
     }
 }
@@ -11530,7 +11568,7 @@ static void* daAlink_searchKolin(fopAc_ac_c* i_actor, void* i_data) {
 int daAlink_c::orderZTalk() {
     if ((!checkReinRide() && !checkModeFlg(0x40000) && !checkMagneBootsOn() && (!mLinkAcch.ChkGroundHit() || checkModeFlg(0x70C52)))
         || mThrowBoomerangAcKeep.getActor() != NULL
-        || dComIfGp_checkPlayerStatus0(0, 0x8000000)
+        || dComIfGp_checkPlayerStatus0(mPlayerNo, 0x8000000)
         || mProcID == PROC_CRAWL_END
         || checkHorseZelda()
         || checkCloudSea()
@@ -12074,7 +12112,7 @@ void daAlink_c::swordUnequip() {
 void daAlink_c::itemEquip(u16 i_itemID) {
     if (mThrowBoomerangAcKeep.getActor() == NULL || i_itemID != dItemNo_BOOMERANG_e) {
         field_0x2fde = i_itemID;
-        dComIfGp_clearPlayerStatus0(0, 0x400000);
+        dComIfGp_clearPlayerStatus0(mPlayerNo, 0x400000);
         offNoResetFlg3(FLG3_COPY_ROD_THROW_AFTER);
         itemUnequip(field_0x2fde, -1.0f);
     }
@@ -13119,7 +13157,7 @@ void daAlink_c::posMove() {
         if (checkNoResetFlg0(FLG0_SWIM_UP) && mProcID != PROC_SWIM_DIVE) {
             current.pos.y = mWaterY;
         } else if (mDemo.getDemoType() == daPy_demo_c::DEMO_TYPE_START_e || mProcID == PROC_ELEC_DAMAGE ||
-                   dComIfGp_checkPlayerStatus0(0, 0x10))
+                   dComIfGp_checkPlayerStatus0(mPlayerNo, 0x10))
         {
             speed.y = 0.0f;
         } else if (checkWolf()) {
@@ -14575,7 +14613,7 @@ int daAlink_c::changeItemTriggerKeepProc(u8 i_selItemIdx, int i_procType) {
         procNotUseItemInit((u16)sel_item);
     } else if (i_procType == ITEM_PROC_SUBJECTIVITY) {
         procCoSubjectivityInit();
-        dComIfGp_setPlayerStatus0(0, 0x200000);
+        dComIfGp_setPlayerStatus0(mPlayerNo, 0x200000);
         seStartSystem(Z2SE_AL_HAWK_EYE_PUTON);
     } else if (i_procType == ITEM_PROC_PICK_PUT) {
         procPickPutInit(1);
@@ -14585,7 +14623,7 @@ int daAlink_c::changeItemTriggerKeepProc(u8 i_selItemIdx, int i_procType) {
         field_0x2fde = dItemNo_NONE_e;
         itemEquip(sel_item);
 
-        if (dComIfGp_checkPlayerStatus0(0, 0x2000) &&
+        if (dComIfGp_checkPlayerStatus0(mPlayerNo, 0x2000) &&
             ((checkBowAndSlingItem(field_0x2fde) || checkHookshotItem(field_0x2fde) ||
               field_0x2fde == dItemNo_COPY_ROD_e) ||
              field_0x2fde == dItemNo_BOOMERANG_e))
@@ -15095,7 +15133,7 @@ void daAlink_c::commonProcInit(daAlink_c::daAlink_PROC i_procID) {
         cancelHookshotCarry();
         setOldRootQuaternion(shape_angle.x, 0, 0);
         cancelItemUseQuake(1);
-    } else if (dComIfGp_checkPlayerStatus1(0, 0x02010000)) {
+    } else if (dComIfGp_checkPlayerStatus1(mPlayerNo, 0x02010000)) {
         if (mProcID != PROC_HOOKSHOT_FLY) {
             cancelItemUseQuake(0);
         }
@@ -15346,8 +15384,8 @@ void daAlink_c::commonProcInit(daAlink_c::daAlink_PROC i_procID) {
         cancelHookshotCarry();
     }
 
-    if ((dComIfGp_checkPlayerStatus0(0, 8) && !checkModeFlg(MODE_VINE_CLIMB) && mProcID != PROC_HANG_CLIMB) ||
-        ((dComIfGp_checkPlayerStatus1(0, 0x2000000) && mProcID != PROC_HOOKSHOT_WALL_SHOOT && mProcID != PROC_HOOKSHOT_WALL_WAIT)))
+    if ((dComIfGp_checkPlayerStatus0(mPlayerNo, 8) && !checkModeFlg(MODE_VINE_CLIMB) && mProcID != PROC_HANG_CLIMB) ||
+        ((dComIfGp_checkPlayerStatus1(mPlayerNo, 0x2000000) && mProcID != PROC_HOOKSHOT_WALL_SHOOT && mProcID != PROC_HOOKSHOT_WALL_WAIT)))
     {
         if (mProcID == PROC_CLIMB_TO_ROOF) {
             current.pos.x += 10.0f * cM_ssin(shape_angle.y);
@@ -15358,17 +15396,17 @@ void daAlink_c::commonProcInit(daAlink_c::daAlink_PROC i_procID) {
         }
     }
 
-    if (dComIfGp_checkPlayerStatus0(0, 0x200000)) {
+    if (dComIfGp_checkPlayerStatus0(mPlayerNo, 0x200000)) {
         seStartSystem(Z2SE_AL_HAWK_EYE_PUTOFF);
     }
 
     if (checkUpperReadyThrowAnime() && mEquipItem != 0x102) {
-        dComIfGp_clearPlayerStatus0(0, 0xfeb5ab0f);
+        dComIfGp_clearPlayerStatus0(mPlayerNo, 0xfeb5ab0f);
     } else {
-        dComIfGp_clearPlayerStatus0(0, 0xffbfffcf);
+        dComIfGp_clearPlayerStatus0(mPlayerNo, 0xffbfffcf);
     }
 
-    dComIfGp_clearPlayerStatus1(0, 0x7fb7b78);
+    dComIfGp_clearPlayerStatus1(mPlayerNo, 0x7fb7b78);
 
     cancelHookshotShot();
     if (mEquipItem == 0x109) {
@@ -15834,7 +15872,7 @@ int daAlink_c::procMoveTurnInit(int param_0) {
     }
 
     setBlendMoveAnime(mpHIO->mBasic.m.mBasicInterpolation);
-    dComIfGp_setPlayerStatus0(0, 0x800);
+    dComIfGp_setPlayerStatus0(mPlayerNo, 0x800);
 
     if (param_0 != 0) {
         mProcVar3.field_0x300e = (s16)((mpHIO->mMove.m.mMaxTurnAngle * 4) + 19030);
@@ -16031,7 +16069,7 @@ int daAlink_c::procSlideInit(s16 param_0) {
     if (cLib_distanceAngleS(param_0, shape_angle.y) < 0x3800 || mProcVar3.field_0x300e != 0) {
         field_0x3198 = 1;
         setSingleAnimeParam(ANM_SLIDE_FORWARD, &mpHIO->mSlide.m.mForwardSlideAnm);
-        dComIfGp_setPlayerStatus1(0, 0x100);
+        dComIfGp_setPlayerStatus1(mPlayerNo, 0x100);
         onModeFlg(MODE_UNK_8000);
         onModeFlg(MODE_UNK_2000000);
         onModeFlg(MODE_UNK_20000000);
@@ -16043,7 +16081,7 @@ int daAlink_c::procSlideInit(s16 param_0) {
     } else {
         field_0x3198 = 0;
         setSingleAnimeParam(ANM_SLIDE_BACKWARD, &mpHIO->mSlide.m.mBackwardSlideAnm);
-        dComIfGp_setPlayerStatus1(0, 0x200);
+        dComIfGp_setPlayerStatus1(mPlayerNo, 0x200);
         field_0x2f9d = 0x60;
         setFootEffectProcType(1);
     }
@@ -17100,7 +17138,7 @@ int daAlink_c::procFallInit(int param_0, f32 i_morf) {
         mLinkAcch.OnLineCheckNone();
     }
 
-    u32 var_r3 = checkModeFlg(0x10000) && !dComIfGp_checkPlayerStatus0(0, 8);
+    u32 var_r3 = checkModeFlg(0x10000) && !dComIfGp_checkPlayerStatus0(mPlayerNo, 8);
     BOOL temp_r30 = mProcID != PROC_CANOE_GETOFF;
     BOOL temp_r29 = mProcID == PROC_ROOF_HANG_FRONT_MOVE;
 
@@ -18139,12 +18177,12 @@ int daAlink_c::execute() {
             || mProcID == PROC_WOLF_DIG
             || mProcID == PROC_WOLF_DIG_THROUGH
             || checkNoResetFlg0(FLG0_UNK_4000)
-            || dComIfGp_checkPlayerStatus1(0, 0x1000000)
+            || dComIfGp_checkPlayerStatus1(mPlayerNo, 0x1000000)
             || (checkEventRun() && partner != NULL && (partner->attention_info.flags & fopAc_AttnFlag_UNK_0x400000))
             || strcmp(dComIfGp_getEventManager().getRunEventName(), l_defaultGetEventName) == 0)
         {
             mWolfEyeUp = mpHIO->mWolf.m.mSensesLingerTime;
-        } else if (mTargetedActor != NULL || dComIfGp_checkPlayerStatus0(0, 0x2000)) {
+        } else if (mTargetedActor != NULL || dComIfGp_checkPlayerStatus0(mPlayerNo, 0x2000)) {
             mWolfEyeUp = mpHIO->mWolf.m.mSensesLingerTime - 1;
         } else if (!dComIfGp_getEvent()->isOrderOK() && mProcID != PROC_GET_ITEM &&
                    mWolfEyeUp <= mpHIO->mWolf.m.mSensesLingerTime)
@@ -18253,7 +18291,7 @@ int daAlink_c::execute() {
         if (checkEquipHeavyBoots()) {
             int itemButton = checkItemSetButton(dItemNo_HVY_BOOTS_e);
             if (itemButton == 2 || checkNotHeavyBootsStage()) {
-                if (!dComIfGp_checkPlayerStatus1(0, 0x10000) || !checkHookshotRoofLv7Boss()) {
+                if (!dComIfGp_checkPlayerStatus1(mPlayerNo, 0x10000) || !checkHookshotRoofLv7Boss()) {
                     setHeavyBoots(0);
                 }
             } else {
@@ -18358,7 +18396,7 @@ int daAlink_c::execute() {
                 f32 var_f31;
                 if (mProcID == PROC_HOOKSHOT_FLY) {
                     var_f31 = current.pos.y - (mHeight * 0.5f);
-                } else if (dComIfGp_checkPlayerStatus1(0, 0x2000000)) {
+                } else if (dComIfGp_checkPlayerStatus1(mPlayerNo, 0x2000000)) {
                     var_f31 = (current.pos.y + -65.0f) - (mpHIO->mSwim.m.mStartHeight - 5.0f);
                 } else {
                     var_f31 = current.pos.y;
@@ -18898,7 +18936,7 @@ int daAlink_c::execute() {
         }
     }
 
-    if (checkEndResetFlg2(ERFLG2_UNK_20) && dComIfGp_checkPlayerStatus0(0, 0x200000) &&
+    if (checkEndResetFlg2(ERFLG2_UNK_20) && dComIfGp_checkPlayerStatus0(mPlayerNo, 0x200000) &&
         (field_0x310e != field_0x310a || field_0x3110 != field_0x310c))
     {
         mDoAud_seStartLevel(Z2SE_AL_HAWK_EYE_PAN, NULL, 0, 0);
@@ -19122,7 +19160,7 @@ int daAlink_c::initShadowScaleLight() {
     fopAc_ac_c* talkActor = fopAcM_getTalkEventPartner(this);
 
     f32 var_f30;
-    if (dComIfGp_checkPlayerStatus0(0, 0x100000)) {
+    if (dComIfGp_checkPlayerStatus0(mPlayerNo, 0x100000)) {
         var_f30 = 0.0f;
     } else {
         var_f30 = 150.0f;
@@ -19333,7 +19371,7 @@ void daAlink_c::shadowDraw() {
                         dComIfGd_addRealShadow(shadowID, mHeldItemModel);
 
                         if (checkHookshotItem(mEquipItem)) {
-                            if (checkHookshotWait() && !dComIfGp_checkPlayerStatus1(0, 0x10000)) {
+                            if (checkHookshotWait() && !dComIfGp_checkPlayerStatus1(mPlayerNo, 0x10000)) {
                                 dComIfGd_addRealShadow(shadowID, mpHookTipModel);
                             }
 
@@ -19342,7 +19380,7 @@ void daAlink_c::shadowDraw() {
                                 !checkNoResetFlg0(FLG0_UNK_2)) {
                                 dComIfGd_addRealShadow(shadowID, field_0x0710);
 
-                                if (!dComIfGp_checkPlayerStatus1(0, 0x10000)) {
+                                if (!dComIfGp_checkPlayerStatus1(mPlayerNo, 0x10000)) {
                                     dComIfGd_addRealShadow(shadowID, field_0x0714);
                                 }
                             }
@@ -19377,7 +19415,7 @@ void daAlink_c::shadowDraw() {
                 }
             }
 
-            if (dComIfGp_checkPlayerStatus1(0, 0x10000) &&
+            if (dComIfGp_checkPlayerStatus1(mPlayerNo, 0x10000) &&
                 mCargoCarryAcKeep.getID() != fpcM_ERROR_PROCESS_ID_e) {
                 actor = fopAcM_SearchByID(mCargoCarryAcKeep.getID());
                 if (actor != NULL && actor->model != NULL) {
@@ -19891,8 +19929,14 @@ static int daAlink_Draw(daAlink_c* i_this) {
 }
 
 daAlink_c::~daAlink_c() {
+#if TARGET_PC
+    // each player clears its own slot in the 4-wide status table (P1 == 0)
+    dComIfGp_clearPlayerStatus0(mPlayerNo, ~0x400030);
+    dComIfGp_clearPlayerStatus1(mPlayerNo, 0x7FB7B78);
+#else
     dComIfGp_clearPlayerStatus0(0, ~0x400030);
     dComIfGp_clearPlayerStatus1(0, 0x7FB7B78);
+#endif
 
     #if DEBUG
     mpHIO->removeHIO();
