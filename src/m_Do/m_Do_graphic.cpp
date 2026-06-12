@@ -1303,6 +1303,11 @@ static void trimming(view_class* param_0, view_port_class* param_1) {
     if (dusk::getSettings().game.recordingMode) {
         return;
     }
+    // coop: trim bars paint black outside the current window's scissor, which
+    // erases the OTHER window's content — skip while split rendering
+    if (dusk::coop::isSplitActive()) {
+        return;
+    }
 #endif
     ZoneScoped;
     UNUSED(param_0);

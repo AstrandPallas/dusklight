@@ -53,8 +53,8 @@ void tick() {
     }
 
     // Spike scaffolding: render two stacked views of the SAME camera (no P2 yet).
-    if (getSettings().game.coopDebugSplit && dComIfGp_getWindowNum() == 1 &&
-        dComIfGp_getCamera(0) != NULL) {
+    if (getSettings().game.coopDebugSplit && dComIfGp_getCamera(0) != NULL) {
+        // (re)apply every tick: cameras/cutscenes stomp window rects (ResetView)
         f32 halfH = FB_HEIGHT / 2.0f;
         dComIfGp_setWindow(0, 0.0f, 0.0f, FB_WIDTH, halfH, 0.0f, 1.0f, 0, 2);
         dComIfGp_setWindow(1, 0.0f, halfH, FB_WIDTH, halfH, 0.0f, 1.0f, 0, 2);

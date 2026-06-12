@@ -2739,6 +2739,12 @@ int dCamera_c::defaultTriming() {
 }
 
 void dCamera_c::setView(f32 i_xOrig, f32 i_yOrig, f32 i_width, f32 i_height) {
+#if TARGET_PC
+    // coop: window rects are owned by the split layout; cameras must not stomp them
+    if (dusk::coop::isSplitActive()) {
+        return;
+    }
+#endif
     dDlst_window_c* window = get_window(field_0x0);
     view_port_class* view_port = window->getViewPort();
     window->setViewPort(i_xOrig, i_yOrig, i_width, i_height, view_port->near_z, view_port->far_z);
@@ -11300,6 +11306,12 @@ f32 get_target_trim_height(camera_process_class* i_this) {
 }
 
 void widezoom_correction(camera_process_class* i_this, float trim_height) {
+#if TARGET_PC
+    // coop: window rects are owned by the split layout; cameras must not stomp them
+    if (dusk::coop::isSplitActive()) {
+        return;
+    }
+#endif
     camera_class* camera = (camera_class*)i_this;
     dDlst_window_c* window = get_window(camera);
     view_port_class* viewport = window->getViewPort();
