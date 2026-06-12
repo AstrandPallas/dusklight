@@ -13,10 +13,10 @@ namespace dusk::coop {
 
 static State s_state = State::Disabled;
 // Slot [n] belongs to player n+2's guest (P1 has no slot); v1 uses [0].
-// s_guestProcID is set the moment a spawn is REQUESTED (so the actor's create
-// phase can identify itself via guestPlayerNo()); s_guestActorID only once the
-// actor exists. During spawn-in-progress, guestPlayerNo() resolves but
-// playerCount() intentionally does not count the guest yet.
+// Both IDs are recorded at spawn REQUEST time: procID so the actor's create
+// phase can self-identify via guestPlayerNo(), actorID so lifecycle checks
+// (getGuestActor / isGuestGone) can use SearchByID's creating-vs-gone
+// semantics. playerCount() therefore counts a guest from request onward.
 static unsigned int s_guestProcID[kMaxPlayers - 1] = {kNoProcID, kNoProcID, kNoProcID};
 static unsigned int s_guestActorID[kMaxPlayers - 1] = {kNoProcID, kNoProcID, kNoProcID};
 
@@ -66,7 +66,12 @@ static bool isGuestGone(int playerNo) {
 
 static void spawnGuest(int playerNo) {
     daPy_py_c* p1 = dComIfGp_getLinkPlayer();
-    if (p1 == NULL) return;  // P1 not fully created yet — keeps bgWaitFlg safe
+    if (p1 == NULL) return;  // no P1 at all
+    fopAc_ac_c* p1Done = NULL;
+    if (!fopAcM_SearchByID(fopAcM_GetID(p1), &p1Done) || p1Done == NULL) {
+        return;  // P1 still mid-create — guest create would corrupt the
+                 // shared bgWaitFlg latch in daAlink_c::create
+    }
 
     cXyz pos = p1->current.pos;
     pos.x += 100.0f * playerNo;
@@ -129,13 +134,14 @@ void tick() {
         DuskLog.info("coop: enabled, waiting for P2 (START on pad 2)");
     }
 
+    static int holdFrames = 0;
     if (s_state == State::Solo && mDoCPd_c::getTrigStart(PAD_2)) {
+        holdFrames = 0;
         spawnGuest(1);
     } else if (s_state == State::Active) {
         // leave: hold START on pad 2 (~2s at 30fps logic). Only despawn once
         // the actor fully exists — deleting a mid-create process would leave
         // an orphan Link that self-identifies as P1.
-        static int holdFrames = 0;
         holdFrames = mDoCPd_c::getHoldStart(PAD_2) ? holdFrames + 1 : 0;
         if (holdFrames > 60 && getGuestActor(1) != NULL) {
             despawnGuest(1);
@@ -148,6 +154,8 @@ void tick() {
             s_state = State::Solo;
             DuskLog.info("coop: guest Link P2 gone (scene change), back to Solo");
         }
+    } else {
+        holdFrames = 0;
     }
 
     // Spike scaffolding: render two stacked views of the SAME camera (no P2 yet).

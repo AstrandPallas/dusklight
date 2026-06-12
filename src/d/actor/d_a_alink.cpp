@@ -4933,8 +4933,9 @@ int daAlink_c::create() {
             dComIfGp_setPlayer(0, this);
             dComIfGp_setLinkPlayer(this);
         } else {
-            // player slot n → camera n
-            dComIfGp_setPlayerInfo(mPlayerNo, this, mPlayerNo);
+            // TODO(coop Task 8): bind to camera mPlayerNo once per-player
+            // cameras exist; until then guests share P1's camera 0
+            dComIfGp_setPlayerInfo(mPlayerNo, this, 0);
         }
 #else
         dComIfGp_setPlayer(0, this);
@@ -5013,6 +5014,8 @@ int daAlink_c::create() {
 
         mAttention = dComIfGp_getAttention();
 #if TARGET_PC
+        // TODO(coop Task 8): bind to camera mPlayerNo once per-player
+        // cameras exist; until then guests share P1's camera 0
         field_0x317c = dComIfGp_getPlayerCameraID(mPlayerNo);
 #else
         field_0x317c = dComIfGp_getPlayerCameraID(0);
@@ -5021,6 +5024,11 @@ int daAlink_c::create() {
         playerInit();
         bgWaitFlg = TRUE;
 
+#if TARGET_PC
+        if (isGuest()) {
+            mRideActorID = fpcM_ERROR_PROCESS_ID_e;
+        } else
+#endif
         if (checkCanoeStart()) {
             mRideActorID = fopAcM_create(fpcNm_CANOE_e, 0, &current.pos, fopAcM_GetRoomNo(this),
                                          &shape_angle, NULL, -1);
@@ -17922,7 +17930,13 @@ int daAlink_c::execute() {
         mSwordUpTimer--;
     }
 
+#if TARGET_PC
+    // coop: read this player's slot (guests' slots point at camera 0 until
+    // per-player cameras exist — see Task 8)
+    field_0x317c = dComIfGp_getPlayerCameraID(mPlayerNo);
+#else
     field_0x317c = dComIfGp_getPlayerCameraID(0);
+#endif
     field_0x3510 = current.pos;
 
     if (checkMagneBootsOn()) {
