@@ -6,6 +6,7 @@
 
 #if TARGET_PC
 #include "JSystem/JGeometry.h"
+#include "dusk/coop.h"
 #endif
 
 #include "dusk/gx_helper.h"
@@ -22,10 +23,22 @@ struct mDoLib_clipper {
     }
 
     static int clip(const Mtx m, const Vec* param_1, const Vec* param_2) {
+#if TARGET_PC
+        // coop: one global frustum can't serve two views — never cull during split
+        if (dusk::coop::isSplitActive()) {
+            return 0;  // visible
+        }
+#endif
         return mClipper.clip(m, (Vec*)param_1, (Vec*)param_2);
     }
 
     static s32 clip(const Mtx m, Vec param_1, f32 param_2) {
+#if TARGET_PC
+        // coop: one global frustum can't serve two views — never cull during split
+        if (dusk::coop::isSplitActive()) {
+            return 0;  // visible
+        }
+#endif
         return mClipper.clip(m, param_1, param_2);
     }
 
