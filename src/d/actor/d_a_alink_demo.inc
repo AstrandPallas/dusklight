@@ -959,7 +959,11 @@ void daAlink_c::endDemoMode() {
             if (isDemoTypeStart && (mProcID == PROC_MOVE || mProcID == PROC_WOLF_MOVE)) {
                 mStickValue = mDoCPd_c::getStickValue(mPlayerNo);
                 mStickAngle = mDoCPd_c::getStickAngle(mPlayerNo) + 0x8000;
+#if TARGET_PC
+                mMoveAngle = mStickAngle + dCam_getControledAngleY(coopCamera());
+#else
                 mMoveAngle = mStickAngle + dCam_getControledAngleY(dComIfGp_getCamera(field_0x317c));
+#endif
                 mNormalSpeed = speedF;
                 commonCheckNextAction(0);
             } else if (mProcID == PROC_HAWK_CATCH || mProcID == PROC_HAWK_SUBJECT) {
@@ -2368,7 +2372,11 @@ int daAlink_c::procCoGetItemInit() {
     } else if (mDemo.getParam1() == 2) {
         mProcVar3.field_0x300e = 0;
     } else {
+#if TARGET_PC
+        mProcVar3.field_0x300e = shape_angle.y - (fopCamM_GetAngleY(coopCamera()) + 0x8000);
+#else
         mProcVar3.field_0x300e = shape_angle.y - (fopCamM_GetAngleY(dComIfGp_getCamera(field_0x317c)) + 0x8000);
+#endif
         s16 temp_r28 = mProcVar3.field_0x300e + 0x16C1;
         s16 temp_r31 = mProcVar3.field_0x300e - 0x16C1;
 

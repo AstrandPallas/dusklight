@@ -86,11 +86,23 @@ static int fopCam_Create(void* i_this) {
         a_this->submethod = profile->sub_method;
 
         fopDwTg_Init(&a_this->create_tag, a_this);
+#if TARGET_PC
+        // the append is a fopCamM_prm_class whose parameters field is stored
+        // big-endian on PC (BE<u32>); the original raw u32 read only worked
+        // because camera 0's slot value 0 is byte-order symmetric. Read through
+        // the struct so nonzero camera slots (co-op camera 1) survive.
+        fopCamM_prm_class* append = (fopCamM_prm_class*)fpcM_GetAppend(a_this);
+
+        if (append != NULL) {
+            fpcM_SetParam(a_this, append->base.parameters);
+        }
+#else
         u32* append = (u32*)fpcM_GetAppend(a_this);
 
         if (append != NULL) {
             fpcM_SetParam(a_this, *append);
         }
+#endif
     }
 
     ret = fpcMtd_Create(&a_this->submethod->base, a_this);

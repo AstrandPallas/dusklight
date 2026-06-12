@@ -4933,9 +4933,9 @@ int daAlink_c::create() {
             dComIfGp_setPlayer(0, this);
             dComIfGp_setLinkPlayer(this);
         } else {
-            // TODO(coop Task 8): bind to camera mPlayerNo once per-player
-            // cameras exist; until then guests share P1's camera 0
-            dComIfGp_setPlayerInfo(mPlayerNo, this, 0);
+            // coop: slot n → camera n (camera n is created by the coop manager
+            // at join; it waits on this registration to finish its init)
+            dComIfGp_setPlayerInfo(mPlayerNo, this, mPlayerNo);
         }
 #else
         dComIfGp_setPlayer(0, this);
@@ -5021,8 +5021,9 @@ int daAlink_c::create() {
 
         mAttention = dComIfGp_getAttention();
 #if TARGET_PC
-        // TODO(coop Task 8): bind to camera mPlayerNo once per-player
-        // cameras exist; until then guests share P1's camera 0
+        // coop: read this player's slot. A guest's own camera may still be
+        // initializing for a few frames — sites that deref the camera pointer
+        // go through coopCamera(), which falls back to camera 0 while NULL.
         field_0x317c = dComIfGp_getPlayerCameraID(mPlayerNo);
 #else
         field_0x317c = dComIfGp_getPlayerCameraID(0);
@@ -9536,7 +9537,11 @@ void daAlink_c::setStickData() {
         }
 
         mMoveValue = mStickValue;
+#if TARGET_PC
+        mMoveAngle = mStickAngle + dCam_getControledAngleY(coopCamera());
+#else
         mMoveAngle = mStickAngle + dCam_getControledAngleY(dComIfGp_getCamera(field_0x317c));
+#endif
 
         if (checkMagneBootsOn()) {
             if (field_0x2fb9 == 1 ||
@@ -14133,8 +14138,27 @@ void daAlink_c::resetBasAnime() {
     field_0x2d80 = NULL;
 }
 
+#if TARGET_PC
+camera_process_class* daAlink_c::coopCamera() const {
+    // a camera counts as live once its init_phase2 raised the window count
+    // past its slot — before that the process can be registered (phase 1)
+    // while its dCamera_c body is still unconstructed
+    if (field_0x317c < dComIfGp_getWindowNum()) {
+        camera_process_class* camera = dComIfGp_getCamera(field_0x317c);
+        if (camera != NULL) {
+            return camera;
+        }
+    }
+    return dComIfGp_getCamera(0);
+}
+#endif
+
 BOOL daAlink_c::checkSightLine(f32 i_maxDist, cXyz* o_sightPos) {
+#if TARGET_PC
+    camera_process_class* camera = coopCamera();
+#else
     camera_process_class* camera = dComIfGp_getCamera(field_0x317c);
+#endif
     cXyz* line_start_pos = fopCamM_GetEye_p(camera);
     cXyz sp3C;
     cXyz sp30(mHeldItemRootPos);
@@ -17938,8 +17962,9 @@ int daAlink_c::execute() {
     }
 
 #if TARGET_PC
-    // coop: read this player's slot (guests' slots point at camera 0 until
-    // per-player cameras exist — see Task 8)
+    // coop: read this player's slot (slot n → camera n; the guest's camera is
+    // created by the coop manager at join and may lag its first frames —
+    // camera-pointer derefs go through coopCamera() for the NULL window)
     field_0x317c = dComIfGp_getPlayerCameraID(mPlayerNo);
 #else
     field_0x317c = dComIfGp_getPlayerCameraID(0);

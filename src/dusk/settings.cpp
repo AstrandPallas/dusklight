@@ -30,7 +30,6 @@ UserSettings g_userSettings = {
         // Quality of Life
         .enableQuickTransform {"game.enableQuickTransform", false},
         .coopEnabled {"game.coopEnabled", false},
-        .coopDebugSplit {"game.coopDebugSplit", false},
         .hideTvSettingsScreen {"game.hideTvSettingsScreen", true},
         .biggerWallets {"game.biggerWallets", false},
         .noReturnRupees {"game.noReturnRupees", false},
@@ -217,7 +216,6 @@ void registerSettings() {
     Register(g_userSettings.game.language);
     Register(g_userSettings.game.enableQuickTransform);
     Register(g_userSettings.game.coopEnabled);
-    Register(g_userSettings.game.coopDebugSplit);
     Register(g_userSettings.game.hideTvSettingsScreen);
     Register(g_userSettings.game.biggerWallets);
     Register(g_userSettings.game.noReturnRupees);

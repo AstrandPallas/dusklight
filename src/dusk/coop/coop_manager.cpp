@@ -1,10 +1,13 @@
 #include "dusk/coop/coop_manager.hpp"
 
+#include "SSystem/SComponent/c_malloc.h"
 #include "d/actor/d_a_player.h"
 #include "d/d_com_inf_game.h"
 #include "dusk/logging.h"
 #include "dusk/settings.h"
 #include "f_op/f_op_actor_mng.h"
+#include "f_op/f_op_camera_mng.h"
+#include "f_pc/f_pc_manager.h"
 #include "f_pc/f_pc_name.h"
 #include "m_Do/m_Do_controller_pad.h"
 #include "m_Do/m_Do_graphic.h"
@@ -23,6 +26,54 @@ static unsigned int s_guestActorID[kMaxPlayers - 1] = {kNoProcID, kNoProcID, kNo
 static void restoreSingleWindow() {
     dComIfGp_setWindow(0, 0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, 0.0f, 1.0f, 0, 2);
     dComIfGp_setWindowNum(1);
+}
+
+// Applies window rects + camera bindings for `count` players.
+// Window-count transitions: shrinking applies immediately; growing is raised
+// by camera init_phase2 once the new camera is live — unless forceNum is set
+// (stash/restore, where all cameras already exist).
+// v1 implements counts 1-2; 3-4 (quadrant/column) are v2 cases added here.
+static void applySplitLayout(int count, bool forceNum) {
+    if (count <= 1) {
+        restoreSingleWindow();
+        return;
+    }
+    // count == 2: horizontal split, P1 top / P2 bottom
+    f32 halfH = FB_HEIGHT / 2.0f;
+    dComIfGp_setWindow(0, 0.0f, 0.0f, FB_WIDTH, halfH, 0.0f, 1.0f, 0, 2);
+    dComIfGp_setWindow(1, 0.0f, halfH, FB_WIDTH, halfH, 0.0f, 1.0f, 1, 2);
+    if (forceNum) {
+        dComIfGp_setWindowNum(2);
+    }
+}
+
+// True while camera `cameraIdx`'s process is alive or still in its multi-frame
+// create phase. l_fopCamM_id slots are 0 before first use and can hold a dead
+// process's ID after a scene change — both count as "not alive" (real process
+// IDs start at 1, see fpcBs_MakeOfId).
+static bool isCameraAlive(int cameraIdx) {
+    fpc_ProcID camID = fopCamM_GetID(cameraIdx);
+    if (camID == 0 || camID == kNoProcID) return false;
+    return fpcM_SearchByID(camID) != NULL || fpcM_IsCreating(camID);
+}
+
+// Deletes camera `cameraIdx` if it is alive and clears the manager-side slot.
+// A camera still mid-create can't be deleted (fpcDt_Delete refuses creating
+// procs, and fpcM_SearchByID can't see them) — it then parks in init_phase2
+// waiting for a player that no longer exists, and the next join adopts it
+// (spawnGuest checks isCameraAlive before creating another).
+static void teardownCamera(int cameraIdx) {
+    fpc_ProcID camID = fopCamM_GetID(cameraIdx);
+    if (camID == 0 || camID == kNoProcID) return;
+    base_process_class* proc = fpcM_SearchByID(camID);
+    if (proc != NULL) {
+        fpcM_Delete(proc);
+        fopCamM_ClearID(cameraIdx);
+    } else if (!fpcM_IsCreating(camID)) {
+        // already gone (scene change deletes the stage-layer camera procs) —
+        // just drop the stale ID
+        fopCamM_ClearID(cameraIdx);
+    }
 }
 
 State getState() { return s_state; }
@@ -87,6 +138,27 @@ static void spawnGuest(int playerNo) {
         s_guestProcID[playerNo - 1] = id;
         s_guestActorID[playerNo - 1] = id;
         s_state = State::Active;
+
+        // window 0 = top / camera 0 / P1; window 1 = bottom / camera 1 / P2.
+        // windowNum stays 1 until camera 1's init_phase2 raises it (the camera
+        // waits for the guest to register into playerInfo[1] first).
+        applySplitLayout(2, /*forceNum*/ false);
+        dComIfGp_setCameraInfo(playerNo, NULL, playerNo, playerNo, -1);
+        if (!isCameraAlive(playerNo)) {
+            // mirror dStage_cameraCreate: the framework owns the append and
+            // frees it on process delete (fpcBs_DeleteAppend). base.parameters
+            // is the camera slot — fopCam_Create copies it into the process
+            // parameters, which get_camera_id reads back.
+            fopCamM_prm_class* prm =
+                (fopCamM_prm_class*)cMl::memalignB(-4, sizeof(fopCamM_prm_class));
+            if (prm != NULL) {
+                prm->base.position.x = 0.0f;
+                prm->base.position.y = 0.0f;
+                prm->base.position.z = 0.0f;
+                prm->base.parameters = playerNo;
+                fopCamM_Create(playerNo, fpcNm_CAMERA2_e, prm);
+            }
+        }
         DuskLog.info("coop: guest Link P{} spawning (proc {})", playerNo + 1, id);
     }
 }
@@ -98,7 +170,14 @@ static void despawnGuest(int playerNo) {
         s_guestProcID[playerNo - 1] = kNoProcID;
         DuskLog.info("coop: guest Link P{} despawned", playerNo + 1);
     }
-    if (playerCount() == 1) s_state = State::Solo;
+    // tear down this player's camera + restore the single window (v1 only ever
+    // creates camera 1; the calls are no-ops for slots that never existed)
+    teardownCamera(playerNo);
+    dComIfGp_setCameraInfo(playerNo, NULL, playerNo, playerNo, -1);
+    if (playerCount() == 1) {
+        applySplitLayout(1, /*forceNum*/ true);
+        s_state = State::Solo;
+    }
 }
 
 void tick() {
@@ -147,31 +226,21 @@ void tick() {
             despawnGuest(1);
             holdFrames = 0;
         }
-        // scene change deleted the guest from under us → drop to Solo
+        // scene change deleted the guest from under us → drop to Solo. The
+        // camera procs are stage-layer so camera 1 died (or is dying) with the
+        // scene — teardownCamera deletes it if somehow still alive and clears
+        // the stale l_fopCamM_id slot either way.
         if (isGuestGone(1)) {
             s_guestActorID[0] = kNoProcID;
             s_guestProcID[0] = kNoProcID;
+            teardownCamera(1);
+            dComIfGp_setCameraInfo(1, NULL, 1, 1, -1);
+            applySplitLayout(1, /*forceNum*/ true);
             s_state = State::Solo;
             DuskLog.info("coop: guest Link P2 gone (scene change), back to Solo");
         }
     } else {
         holdFrames = 0;
-    }
-
-    // Spike scaffolding: render two stacked views of the SAME camera (no P2 yet).
-    if (getSettings().game.coopDebugSplit && dComIfGp_getCamera(0) != NULL) {
-        // (re)apply every tick: cameras/cutscenes stomp window rects (ResetView)
-        f32 halfH = FB_HEIGHT / 2.0f;
-        dComIfGp_setWindow(0, 0.0f, 0.0f, FB_WIDTH, halfH, 0.0f, 1.0f, 0, 2);
-        dComIfGp_setWindow(1, 0.0f, halfH, FB_WIDTH, halfH, 0.0f, 1.0f, 0, 2);
-        dComIfGp_setWindowNum(2);
-        s_state = State::Active;  // drives isSplitActive() → aspect + post-process gates
-    } else if (s_state == State::Active && playerCount() == 1 && s_guestProcID[0] == kNoProcID) {
-        // keyed on state, not windowNum — can't wedge. Only drop to Solo when
-        // no guest exists or is spawning; a live guest keeps state Active even
-        // with a single window (real split windows arrive in a later task).
-        restoreSingleWindow();
-        s_state = State::Solo;
     }
 }
 

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <unordered_map>
+#include <dusk/coop.h>
 #include <dusk/frame_interpolation.h>
 
 namespace dusk::game_clock {
@@ -46,9 +47,15 @@ MainLoopPacer advance_main_loop() {
     MainLoopPacer out{};
     out.presentation_dt_seconds = presentation_dt;
 
+    // coop: frame interp's camera snapshot is single-slot (records camera 0
+    // only, interp_view applies it to EVERY camera's view) — interpolating
+    // while split rendering would stomp camera 1 with camera 0's view. Force
+    // the non-interpolated path for the session; restores itself on leave
+    // since this is re-evaluated every frame.
     const bool should_interpolate = dusk::getSettings().game.enableFrameInterpolation.getValue() !=
                                         dusk::FrameInterpMode::Off &&
-                                    !dusk::getTransientSettings().skipFrameRateLimit;
+                                    !dusk::getTransientSettings().skipFrameRateLimit &&
+                                    !dusk::coop::isSplitActive();
     out.is_interpolating = should_interpolate;
     out.sim_pace = sim_pace();
 

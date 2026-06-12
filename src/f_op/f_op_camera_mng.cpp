@@ -20,6 +20,16 @@ fpc_ProcID fopCamM_Create(int i_cameraIdx, s16 i_procName, void* i_append) {
     return l_fopCamM_id[i_cameraIdx];
 }
 
+#if TARGET_PC
+fpc_ProcID fopCamM_GetID(int i_cameraIdx) {
+    return l_fopCamM_id[i_cameraIdx];
+}
+
+void fopCamM_ClearID(int i_cameraIdx) {
+    l_fopCamM_id[i_cameraIdx] = fpcM_ERROR_PROCESS_ID_e;
+}
+#endif
+
 void fopCamM_Management() {}
 
 void fopCamM_Init() {}

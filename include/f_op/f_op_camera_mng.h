@@ -119,5 +119,11 @@ fpc_ProcID fopCamM_Create(int i_cameraIdx, s16 i_procName, void* i_append);
 void fopCamM_Management();
 u32 fopCamM_GetParam(camera_class* i_this);
 void fopCamM_Init();
+#if TARGET_PC
+// coop: the framework never reads l_fopCamM_id back and never clears it; the
+// co-op manager needs both to find and tear down per-player cameras.
+fpc_ProcID fopCamM_GetID(int i_cameraIdx);
+void fopCamM_ClearID(int i_cameraIdx);
+#endif
 
 #endif

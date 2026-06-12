@@ -4376,6 +4376,12 @@ public:
     u8 mPlayerNo = 0;
     bool isGuest() const { return mPlayerNo != 0; }
     int getPlayerNo() const { return mPlayerNo; }
+    // coop: camera for this player's slot (field_0x317c), falling back to
+    // camera 0 while the guest's own camera — created by the coop manager at
+    // join — is still initializing. Use for any deref of
+    // dComIfGp_getCamera(field_0x317c); plain index reads (attention status,
+    // zoom scale) are safe without it.
+    camera_process_class* coopCamera() const;
 #endif
     /* 0x03180 */ int field_0x3180;
     /* 0x03184 */ int mAlinkStaffId;

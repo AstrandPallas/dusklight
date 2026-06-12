@@ -11473,31 +11473,38 @@ static int camera_draw(camera_process_class* i_this) {
     j3dSys.setViewMtx(process->view.viewMtx);
     cMtx_inverse(process->view.viewMtx, process->view.invViewMtx);
 
-    Z2GetAudience()->setAudioCamera(process->view.viewMtx, process->view.lookat.eye, process->view.lookat.center,
-                                    process->view.fovy, process->view.aspect, getComStat(0x80), camera_id,
-                                    false);
+#if TARGET_PC
+    // coop: the audio listener follows camera 0 only — camera 1 drawing must
+    // not re-point spatial audio at the guest's view every other window pass
+    if (camera_id == 0)
+#endif
+    {
+        Z2GetAudience()->setAudioCamera(process->view.viewMtx, process->view.lookat.eye, process->view.lookat.center,
+                                        process->view.fovy, process->view.aspect, getComStat(0x80), camera_id,
+                                        false);
 
-    dBgS_GndChk gndchk;
-    gndchk.OnWaterGrp();
-    gndchk.SetPos(&process->view.lookat.eye);
+        dBgS_GndChk gndchk;
+        gndchk.OnWaterGrp();
+        gndchk.SetPos(&process->view.lookat.eye);
 
-    f32 cross = dComIfG_Bgsp().GroundCross(&gndchk);
-    if (cross != -G_CM3D_F_INF) {
-        if (dComIfG_Bgsp().ChkGrpInf(gndchk, 0x100)) {
-            mDoAud_getCameraMapInfo(6);
+        f32 cross = dComIfG_Bgsp().GroundCross(&gndchk);
+        if (cross != -G_CM3D_F_INF) {
+            if (dComIfG_Bgsp().ChkGrpInf(gndchk, 0x100)) {
+                mDoAud_getCameraMapInfo(6);
+            } else {
+                mDoAud_getCameraMapInfo(dComIfG_Bgsp().GetMtrlSndId(gndchk));
+            }
+
+            mDoAud_setCameraGroupInfo(dComIfG_Bgsp().GetGrpSoundId(gndchk));
+            Vec spDC;
+            spDC.x = process->view.lookat.eye.x;
+            spDC.y = cross;
+            spDC.z = process->view.lookat.eye.z;
+
+            Z2AudioMgr::getInterface()->setCameraPolygonPos(&spDC);
         } else {
-            mDoAud_getCameraMapInfo(dComIfG_Bgsp().GetMtrlSndId(gndchk));
+            Z2AudioMgr::getInterface()->setCameraPolygonPos(NULL);
         }
-
-        mDoAud_setCameraGroupInfo(dComIfG_Bgsp().GetGrpSoundId(gndchk));
-        Vec spDC;
-        spDC.x = process->view.lookat.eye.x;
-        spDC.y = cross;
-        spDC.z = process->view.lookat.eye.z;
-
-        Z2AudioMgr::getInterface()->setCameraPolygonPos(&spDC);
-    } else {
-        Z2AudioMgr::getInterface()->setCameraPolygonPos(NULL);
     }
 
     MTXCopy(process->view.viewMtx, process->view.viewMtxNoTrans);
@@ -11518,7 +11525,19 @@ static int init_phase1(camera_class* i_this) {
     fopCamM_SetPrm1(i_this, dComIfGp_getCameraWinID(camera_id));
     fopCamM_SetPrm2(i_this, dComIfGp_getCameraPlayer1ID(camera_id));
     fopCamM_SetPrm3(i_this, dComIfGp_getCameraPlayer2ID(camera_id));
+#if TARGET_PC
+    if (camera_id == 0) {
+        dComIfGp_setWindowNum(0);
+    } else {
+        // coop: cameras 1+ are requested mid-game from the manager tick, where
+        // the fpc "current layer" is arbitrary — move to the stage layer (same
+        // fix-up the player actor does in its create) so scene teardown deletes
+        // this camera with everything else. Hiding all windows is boot-only.
+        fopAcM_setStageLayer(i_this);
+    }
+#else
     dComIfGp_setWindowNum(0);
+#endif
 
     i_this->field_0x238 = 0;
     i_this->field_0x22f = 71;
@@ -11559,7 +11578,18 @@ static int init_phase2(camera_class* i_this) {
     }
 
     fopAcM_setStageLayer(player);
+#if TARGET_PC
+    // coop: re-assert the slot pointer (a leave can null cameraInfo while this
+    // camera is parked in this phase; phase 1 does not re-run on adoption),
+    // then raise the window count to cover this camera's window — never lower
+    // it, a mid-game camera 1 must not hide window 0
+    dComIfGp_setCamera(camera_id, i_this);
+    if (dComIfGp_getWindowNum() < camera_id + 1) {
+        dComIfGp_setWindowNum(camera_id + 1);
+    }
+#else
     dComIfGp_setWindowNum(1);
+#endif
 
     JKR_NEW_ARGS (body) dCamera_c(i_this);
 
@@ -11593,7 +11623,14 @@ static int init_phase2(camera_class* i_this) {
 #endif
     }
     i_this->field_0x238 = 0;
-    dComIfGp_getAttention()->Init(player, PAD_1);
+#if TARGET_PC
+    // coop: the attention/Z-target system is shared — camera 1 finishing its
+    // init must not re-bind it to the guest player
+    if (camera_id == 0)
+#endif
+    {
+        dComIfGp_getAttention()->Init(player, PAD_1);
+    }
     return cPhs_NEXT_e;
 }
 
@@ -11623,7 +11660,14 @@ static int camera_delete(camera_process_class* i_this) {
     }
 
     camera->~dCamera_c();
+#if TARGET_PC
+    // coop: clear this camera's own slot — the hardcoded 0 would null camera 0
+    // when camera 1 is torn down. get_camera_id reads the process parameters,
+    // valid even if the dCamera_c body was never placement-constructed.
+    dComIfGp_setCamera(get_camera_id((camera_class*)i_this), NULL);
+#else
     dComIfGp_setCamera(0, NULL);
+#endif
     return 1;
 }
 

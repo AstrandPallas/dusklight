@@ -30,7 +30,11 @@ void daAlink_c::setCrawlMoveDirectionArrow() {
     u8 direction = 0;
 
     BOOL bvar;
+#if TARGET_PC
+    if (cLib_distanceAngleS(fopCamM_GetAngleY(coopCamera()), shape_angle.y) > 0x4000) {
+#else
     if (cLib_distanceAngleS(fopCamM_GetAngleY(dComIfGp_getCamera(field_0x317c)), shape_angle.y) > 0x4000) {
+#endif
         bvar = TRUE;
     } else {
         bvar = FALSE;
