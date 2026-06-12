@@ -1421,8 +1421,6 @@ set(DUSK_FILES
         src/d/actor/d_a_alink_dusk.cpp
         src/dusk/asserts.cpp
         src/dusk/config.cpp
-        src/dusk/coop/coop_manager.cpp
-        src/dusk/coop/coop_manager.hpp
         src/dusk/crash_handler.cpp
         src/dusk/crash_reporting.cpp
         src/dusk/data.cpp
@@ -1438,6 +1436,8 @@ set(DUSK_FILES
         src/dusk/mouse.cpp
 		src/dusk/gamepad_color.cpp
 		src/dusk/autosave.cpp
+        src/dusk/coop/coop_manager.cpp
+        src/dusk/coop/coop_manager.hpp
         src/dusk/http/http.hpp
         src/dusk/io.cpp
         src/dusk/layout.cpp
