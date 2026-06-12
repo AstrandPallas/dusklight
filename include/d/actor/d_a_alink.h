@@ -3473,7 +3473,21 @@ public:
     BOOL checkSmallUpperGuardAnime() const { return checkUpperAnime(dRes_ID_ALANM_BCK_ATDEFS_e); }
     BOOL checkFmChainGrabAnime() const { return checkUpperAnime(dRes_ID_ALANM_BCK_CHAIN_e) || checkUpperAnime(dRes_ID_ALANM_BCK_WL_CHAIN_e); }
 
+#if TARGET_PC
+    // coop: guests have no lock-on until per-player attention exists —
+    // shared-attention lock-on reads must come through these helpers.
+    bool attnLockonSelf() { return !isGuest() && mAttention->LockonTruth(); }
+    fopAc_ac_c* attnLockonTarget(s32 i_idx) {
+        return isGuest() ? NULL : mAttention->LockonTarget(i_idx);
+    }
+    dAttList_c* attnGetLockonList(s32 i_idx) {
+        return isGuest() ? NULL : mAttention->GetLockonList(i_idx);
+    }
+    // Routes checkAttentionLock through attnLockonSelf for guests.
+    BOOL checkAttentionLock() { return isGuest() ? FALSE : mAttention->Lockon(); }
+#else
     BOOL checkAttentionLock() { return mAttention->Lockon(); }
+#endif
 
     bool checkUpperAnime(u16 i_resIdx) const { return mUpperAnmHeap[UPPER_2].getIdx() == i_resIdx; }
     bool checkUnderAnime(u16 i_resIdx) const { return mUnderAnmHeap[UNDER_2].getIdx() == i_resIdx; }

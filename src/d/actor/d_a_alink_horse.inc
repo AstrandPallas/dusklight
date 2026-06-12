@@ -1928,7 +1928,7 @@ int daAlink_c::procHorseCutInit() {
     if (mTargetedActor != NULL) {
         target_actor = mTargetedActor;
     } else {
-        target_actor = mAttention->LockonTarget(0);
+        target_actor = attnLockonTarget(0);
     }
 
     if (target_actor != NULL) {

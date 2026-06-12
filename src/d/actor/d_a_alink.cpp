@@ -2969,8 +2969,9 @@ cXyz* daAlink_c::getNeckAimPos(cXyz* param_0, int* param_1, int param_2) {
         look_actor = mTargetedActor;
         if (checkEnemyGroup(mTargetedActor)) {
             fopAc_ac_c* lock_actor;
-            if (mAttention->GetLockonList(1) != NULL) {
-                lock_actor = mAttention->GetLockonList(1)->getActor();
+            dAttList_c* lock_list = attnGetLockonList(1);
+            if (lock_list != NULL) {
+                lock_actor = lock_list->getActor();
             } else {
                 lock_actor = NULL;
             }
@@ -3002,7 +3003,7 @@ cXyz* daAlink_c::getNeckAimPos(cXyz* param_0, int* param_1, int param_2) {
         }
     }
 
-    fopAc_ac_c* spC = mAttention->LockonTarget(0);
+    fopAc_ac_c* spC = attnLockonTarget(0);
     if (look_actor == NULL) {
         look_actor = dCam_getBody()->GetForceLockOnActor();
     }
@@ -7660,7 +7661,7 @@ void daAlink_c::setBlendMoveAnime(f32 i_morf) {
         field_0x2fb3--;
     }
 
-    fopAc_ac_c* lockon_actor = mAttention->LockonTarget(0);
+    fopAc_ac_c* lockon_actor = attnLockonTarget(0);
 
     daAlink_ANM var_r29;
     if (checkDkCaught2Anime()) {
@@ -8243,7 +8244,7 @@ void daAlink_c::setFaceBck(u16 i_resIdx, BOOL i_isPriIdx, u16 i_arcNo) {
     if (!checkNoResetFlg0(FLG0_SWIM_UP) && mProcID != PROC_GET_ITEM) {
         i_resIdx = dRes_ID_ALANM_BCK_FSWIMINGB_e;
     } else if (i_resIdx == 0) {
-        fopAc_ac_c* lockon_actor = mAttention->LockonTarget(0);
+        fopAc_ac_c* lockon_actor = attnLockonTarget(0);
         if (checkAttentionState() || (checkHorseRide() && checkEnemyGroup(lockon_actor)) || checkEndResetFlg0(ERFLG0_NECK_SEARCH_WIDE)) {
             i_resIdx = dRes_ID_ALANM_BCK_FAT_e;
         } else {
@@ -9706,8 +9707,8 @@ void daAlink_c::setAtnList() {
         mTargetedActor = mCopyRodAcKeep.getActor();
         field_0x27f4 = mTargetedActor;
     } else if (checkAttentionLock()) {
-        mAttList = mAttention->GetLockonList(0);
-        if (mAttList != NULL && mAttention->LockonTruth()) {
+        mAttList = attnGetLockonList(0);
+        if (mAttList != NULL && attnLockonSelf()) {
             mTargetedActor = mAttList->getActor();
             field_0x27f4 = mTargetedActor;
             onResetFlg0(RFLG0_ATTENTION_LOCK);

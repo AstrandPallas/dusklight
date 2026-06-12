@@ -113,7 +113,7 @@ bool daAlink_c::checkCutFastReady() {
         return false;
     }
 
-    fopAc_ac_c* target_p = mAttention->LockonTarget(0);
+    fopAc_ac_c* target_p = attnLockonTarget(0);
 
     if (mEquipItem == dItemNo_NONE_e && (dComIfGs_isEventBit(dSv_event_flag_c::F_0342) || checkNoResetFlg3(FLG3_TRANING_CUT_FAST)))
     {
@@ -1260,8 +1260,8 @@ int daAlink_c::procCutFinishInit(int i_type) {
     setCutWaterDropEffect();
     initCutAtnActorSearch();
 
-    if (mAttention->LockonTarget(0) != NULL && var_r30) {
-        field_0x280c.setData(mAttention->LockonTarget(0));
+    if (attnLockonTarget(0) != NULL && var_r30) {
+        field_0x280c.setData(attnLockonTarget(0));
     } else {
         field_0x280c.clearData();
     }
