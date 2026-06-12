@@ -3,6 +3,7 @@
 #include "SSystem/SComponent/c_malloc.h"
 #include "d/actor/d_a_player.h"
 #include "d/d_com_inf_game.h"
+#include "d/d_demo.h"
 #include "dusk/logging.h"
 #include "dusk/settings.h"
 #include "f_op/f_op_actor_mng.h"
@@ -22,6 +23,28 @@ static State s_state = State::Disabled;
 // semantics. playerCount() therefore counts a guest from request onward.
 static unsigned int s_guestProcID[kMaxPlayers - 1] = {kNoProcID, kNoProcID, kNoProcID};
 static unsigned int s_guestActorID[kMaxPlayers - 1] = {kNoProcID, kNoProcID, kNoProcID};
+
+// Set when a scene change deletes the guest out from under us — the manager
+// respawns it automatically once P1 fully exists again and no stash context
+// is active. Cleared by deliberate despawns (hold-START leave, coop disable)
+// and on spawn success.
+static bool s_wantRejoin = false;
+
+// Recovery thresholds (Active, guest alive): teleport the guest back to P1
+// when it strays this far in XZ or falls this far below P1.
+static const f32 kRecoverDistXZ = 8000.0f;
+static const f32 kRecoverDrop = 4000.0f;
+
+// Hide+freeze bit for stashed guests. f_op_actor.cpp skips BOTH execute and
+// draw while this status is set, unconditionally — the usual
+// fopAcStts_NOEXEC_e route does not work on a player actor because its
+// NOPAUSE profile bit makes dEvt_control_c::moveApproval() return 2
+// (force-approve), which bypasses the NOEXEC check entirely. A suspended
+// actor never runs its execute, so it registers no collision (cc_set happens
+// in execute) and can't take damage or input. daSus_c::check is the only
+// other writer of this bit and skips group fopAc_PLAYER_e, so on a guest
+// Link the bit is ours alone: it persists until we clear it.
+static const u32 kSuspendStatus = fopAcStts_UNK_0x20000000_e;
 
 static void restoreSingleWindow() {
     dComIfGp_setWindow(0, 0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, 0.0f, 1.0f, 0, 2);
@@ -55,6 +78,29 @@ static bool isCameraAlive(int cameraIdx) {
     fpc_ProcID camID = fopCamM_GetID(cameraIdx);
     if (camID == 0 || camID == kNoProcID) return false;
     return fpcM_SearchByID(camID) != NULL || fpcM_IsCreating(camID);
+}
+
+// True once camera `cameraIdx` finished its create phases — only then is its
+// dCamera_c constructed and registered in cameraInfo, i.e. safe to point a
+// window at (a mid-create camera raises windowNum itself in init_phase2).
+static bool isCameraReady(int cameraIdx) {
+    fpc_ProcID camID = fopCamM_GetID(cameraIdx);
+    if (camID == 0 || camID == kNoProcID) return false;
+    return fpcM_SearchByID(camID) != NULL;
+}
+
+// One-player-only contexts: pause/menus, a cutscene camera, or P1 riding
+// anything (horse/boar/spinner/canoe/board — daPy_py_c::checkRide). This
+// predicate IS the co-op feel — keep it conservative. dDemo_c::m_object only
+// exists inside the play scene (d_s_play creates/removes it) and getCamera()
+// asserts on it, so the guard is load-bearing: tick() also runs on the
+// boot/menu scenes.
+static bool shouldStash() {
+    if (dComIfGp_isPauseFlag()) return true;
+    if (dDemo_c::m_object != NULL && dDemo_c::getCamera() != NULL) return true;
+    daPy_py_c* p1 = daPy_getPlayerActorClass();
+    if (p1 != NULL && p1->checkRide()) return true;
+    return false;
 }
 
 // Deletes camera `cameraIdx` if it is alive and clears the manager-side slot.
@@ -115,7 +161,25 @@ static bool isGuestGone(int playerNo) {
     return fopAcM_SearchByID(s_guestActorID[playerNo - 1], &actor) == 0;
 }
 
+// Drops the guest at P1's side and kills any inherited momentum. Used by the
+// stash restore and by the distance/fall recovery.
+static void snapGuestToP1(fopAc_ac_c* guest, int playerNo) {
+    daPy_py_c* p1 = daPy_getPlayerActorClass();
+    if (p1 == NULL) return;
+    guest->current.pos = p1->current.pos;
+    guest->current.pos.x += 100.0f * playerNo;
+    guest->old.pos = guest->current.pos;
+    guest->speed.y = 0.0f;
+}
+
 static void spawnGuest(int playerNo) {
+    if (shouldStash()) {
+        // no joining during cutscenes/menus/rides — also closes the deferred
+        // horse-start hazard (the guest's create would read latched
+        // horse-start globals while P1 rides)
+        DuskLog.info("coop: P{} join refused (cutscene/menu/ride active)", playerNo + 1);
+        return;
+    }
     daPy_py_c* p1 = dComIfGp_getLinkPlayer();
     if (p1 == NULL) return;  // no P1 at all
     fopAc_ac_c* p1Done = NULL;
@@ -138,6 +202,7 @@ static void spawnGuest(int playerNo) {
         s_guestProcID[playerNo - 1] = id;
         s_guestActorID[playerNo - 1] = id;
         s_state = State::Active;
+        s_wantRejoin = false;
 
         // window 0 = top / camera 0 / P1; window 1 = bottom / camera 1 / P2.
         // windowNum stays 1 until camera 1's init_phase2 raises it (the camera
@@ -164,6 +229,9 @@ static void spawnGuest(int playerNo) {
 }
 
 static void despawnGuest(int playerNo) {
+    // deliberate removal (hold-START leave, coop disable) cancels any pending
+    // auto-rejoin
+    s_wantRejoin = false;
     if (s_guestActorID[playerNo - 1] != kNoProcID) {
         fopAcM_delete(s_guestActorID[playerNo - 1]);
         s_guestActorID[playerNo - 1] = kNoProcID;
@@ -194,6 +262,7 @@ void tick() {
         // would make the in-flight create re-identify as P1 — same hazard the
         // hold-START despawn path guards against), so hold off Disabled until
         // it finishes and despawn on a later tick.
+        s_wantRejoin = false;
         bool stillCreating = false;
         for (int i = 0; i < kMaxPlayers - 1; i++) {
             if (s_guestProcID[i] == kNoProcID) continue;
@@ -213,31 +282,92 @@ void tick() {
         DuskLog.info("coop: enabled, waiting for P2 (START on pad 2)");
     }
 
+    // Scene change deleted the guest from under us (possible both mid-gameplay
+    // and mid-cutscene, so check Active AND Stashed) → drop to Solo and queue
+    // an auto-rejoin. The camera procs are stage-layer so camera 1 died (or is
+    // dying) with the scene — teardownCamera deletes it if somehow still alive
+    // and clears the stale l_fopCamM_id slot either way.
+    if ((s_state == State::Active || s_state == State::Stashed) && isGuestGone(1)) {
+        s_guestActorID[0] = kNoProcID;
+        s_guestProcID[0] = kNoProcID;
+        teardownCamera(1);
+        dComIfGp_setCameraInfo(1, NULL, 1, 1, -1);
+        applySplitLayout(1, /*forceNum*/ true);
+        s_state = State::Solo;
+        s_wantRejoin = true;
+        DuskLog.info("coop: guest Link P2 gone (scene change), back to Solo");
+    }
+
     static int holdFrames = 0;
-    if (s_state == State::Solo && mDoCPd_c::getTrigStart(PAD_2)) {
+    if (s_state == State::Solo) {
         holdFrames = 0;
-        spawnGuest(1);
+        if (mDoCPd_c::getTrigStart(PAD_2)) {
+            spawnGuest(1);  // refuses by itself during stash contexts
+        } else if (s_wantRejoin && !shouldStash()) {
+            // auto-rejoin after a scene change took the guest. spawnGuest
+            // clears the flag on success; a transient refusal (P1 still
+            // mid-create, alloc failure) just retries next tick.
+            spawnGuest(1);
+        }
     } else if (s_state == State::Active) {
-        // leave: hold START on pad 2 (~2s at 30fps logic). Only despawn once
+        // leave: hold START on pad 2 (~2s at 30fps logic). Only honored while
+        // Active — a stashed (invisible) P2 can't leave. Only despawn once
         // the actor fully exists — deleting a mid-create process would leave
         // an orphan Link that self-identifies as P1.
         holdFrames = mDoCPd_c::getHoldStart(PAD_2) ? holdFrames + 1 : 0;
         if (holdFrames > 60 && getGuestActor(1) != NULL) {
             despawnGuest(1);
             holdFrames = 0;
-        }
-        // scene change deleted the guest from under us → drop to Solo. The
-        // camera procs are stage-layer so camera 1 died (or is dying) with the
-        // scene — teardownCamera deletes it if somehow still alive and clears
-        // the stale l_fopCamM_id slot either way.
-        if (isGuestGone(1)) {
-            s_guestActorID[0] = kNoProcID;
-            s_guestProcID[0] = kNoProcID;
-            teardownCamera(1);
-            dComIfGp_setCameraInfo(1, NULL, 1, 1, -1);
+        } else if (shouldStash()) {
+            // hide + freeze the guest, give P1 the full screen. Camera 1
+            // stays alive (window 1 just isn't drawn); isSplitActive() going
+            // false also releases the dKy/grass camera-0 pins — vanilla
+            // full-screen rendering. A guest still mid-create has no actor to
+            // flag yet; the Stashed branch below picks it up once it exists.
+            if (fopAc_ac_c* guest = getGuestActor(1)) {
+                fopAcM_OnStatus(guest, kSuspendStatus);
+            }
             applySplitLayout(1, /*forceNum*/ true);
-            s_state = State::Solo;
-            DuskLog.info("coop: guest Link P2 gone (scene change), back to Solo");
+            s_state = State::Stashed;
+            DuskLog.info("coop: P2 stashed");
+        } else {
+            // distance/fall recovery: a guest that fell behind a loading gap
+            // or off a cliff P1 already crossed gets teleported back.
+            fopAc_ac_c* guest = getGuestActor(1);
+            daPy_py_c* p1 = daPy_getPlayerActorClass();
+            if (guest != NULL && p1 != NULL) {
+                f32 distXZSq = guest->current.pos.abs2XZ(p1->current.pos);
+                f32 yDrop = p1->current.pos.y - guest->current.pos.y;
+                if (distXZSq > kRecoverDistXZ * kRecoverDistXZ || yDrop > kRecoverDrop) {
+                    snapGuestToP1(guest, 1);
+                    DuskLog.info("coop: P2 recovered to P1");
+                }
+            }
+        }
+    } else if (s_state == State::Stashed) {
+        holdFrames = 0;
+        fopAc_ac_c* guest = getGuestActor(1);
+        if (!shouldStash()) {
+            // restore: unfreeze next to P1 (the stash context likely moved
+            // P1 — a dropped-off horse ride, a cutscene warp).
+            if (guest != NULL) {
+                snapGuestToP1(guest, 1);
+                fopAcM_OffStatus(guest, kSuspendStatus);
+            }
+            // cameras already exist → force windowNum back to 2; if camera 1
+            // is somehow still mid-create (stash hit during the join frames),
+            // don't force — its init_phase2 raises windowNum once it's safe.
+            applySplitLayout(2, /*forceNum*/ isCameraReady(1));
+            s_state = State::Active;
+            DuskLog.info("coop: P2 restored");
+        } else {
+            // re-assert every frame: covers a guest that finished its create
+            // after the stash transition, and stomps a late camera-1
+            // init_phase2 raising windowNum mid-stash.
+            if (guest != NULL) {
+                fopAcM_OnStatus(guest, kSuspendStatus);
+            }
+            applySplitLayout(1, /*forceNum*/ true);
         }
     } else {
         holdFrames = 0;
