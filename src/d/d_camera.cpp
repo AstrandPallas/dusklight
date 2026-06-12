@@ -11367,6 +11367,16 @@ void widezoom_correction(camera_process_class* i_this, float trim_height) {
 #endif
 
 static int camera_execute(camera_process_class* i_this) {
+#if TARGET_PC
+    // coop: while the guest is stashed (single P1 window), non-primary cameras
+    // must not run — their view_setup/store/draw would stomp the shared view
+    // globals, cull frustum, and j3dSys with a frozen off-screen view
+    if (dusk::coop::getState() == dusk::coop::State::Stashed &&
+        get_camera_id((camera_class*)i_this) != 0) {
+        return 1;
+    }
+#endif
+
     preparation(i_this);
 
     if (dDemo_c::getCamera() != NULL) {
@@ -11420,6 +11430,16 @@ static int camera_execute(camera_process_class* i_this) {
 }
 
 static int camera_draw(camera_process_class* i_this) {
+#if TARGET_PC
+    // coop: while the guest is stashed (single P1 window), non-primary cameras
+    // must not run — their view_setup/store/draw would stomp the shared view
+    // globals, cull frustum, and j3dSys with a frozen off-screen view
+    if (dusk::coop::getState() == dusk::coop::State::Stashed &&
+        get_camera_id((camera_class*)i_this) != 0) {
+        return 1;
+    }
+#endif
+
     camera_class* a_this = (camera_class*)i_this;
     dCamera_c* body = &i_this->mCamera;
     dDlst_window_c* window = get_window(a_this);

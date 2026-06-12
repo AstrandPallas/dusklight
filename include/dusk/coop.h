@@ -13,7 +13,7 @@ enum class State {
     Disabled,
     Solo,
     Active,
-    Stashed,  // guests hidden/frozen during cutscenes, menus, rides (set by later tasks)
+    Stashed,  // guests hidden/frozen during cutscenes, menus, rides
 };
 
 State getState();

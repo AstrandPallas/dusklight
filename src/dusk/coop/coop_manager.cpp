@@ -35,6 +35,16 @@ static bool s_wantRejoin = false;
 static const f32 kRecoverDistXZ = 8000.0f;
 static const f32 kRecoverDrop = 4000.0f;
 
+// X offset from P1 for guest spawn/snap positions, scaled by playerNo so
+// multiple guests don't stack on the same spot.
+static constexpr f32 kGuestSpawnOffsetX = 100.0f;
+
+// A pending auto-rejoin that hasn't succeeded within this many Solo logic
+// frames (~60s at 30fps) is abandoned — otherwise s_wantRejoin would survive
+// quit-to-title and auto-spawn P2 into the next loaded save.
+static constexpr int kRejoinTimeoutFrames = 1800;
+static int s_rejoinWaitFrames = 0;
+
 // Hide+freeze bit for stashed guests. f_op_actor.cpp skips BOTH execute and
 // draw while this status is set, unconditionally — the usual
 // fopAcStts_NOEXEC_e route does not work on a player actor because its
@@ -161,15 +171,17 @@ static bool isGuestGone(int playerNo) {
     return fopAcM_SearchByID(s_guestActorID[playerNo - 1], &actor) == 0;
 }
 
-// Drops the guest at P1's side and kills any inherited momentum. Used by the
-// stash restore and by the distance/fall recovery.
+// Drops the guest at P1's side and kills inherited momentum (vertical speed
+// and forward run speed). Used by the stash restore and by the distance/fall
+// recovery.
 static void snapGuestToP1(fopAc_ac_c* guest, int playerNo) {
     daPy_py_c* p1 = daPy_getPlayerActorClass();
     if (p1 == NULL) return;
     guest->current.pos = p1->current.pos;
-    guest->current.pos.x += 100.0f * playerNo;
+    guest->current.pos.x += kGuestSpawnOffsetX * playerNo;
     guest->old.pos = guest->current.pos;
     guest->speed.y = 0.0f;
+    guest->speedF = 0.0f;
 }
 
 static void spawnGuest(int playerNo) {
@@ -189,7 +201,7 @@ static void spawnGuest(int playerNo) {
     }
 
     cXyz pos = p1->current.pos;
-    pos.x += 100.0f * playerNo;
+    pos.x += kGuestSpawnOffsetX * playerNo;
     csXyz angle = p1->shape_angle;
     int roomNo = fopAcM_GetRoomNo(p1);
 
@@ -203,6 +215,7 @@ static void spawnGuest(int playerNo) {
         s_guestActorID[playerNo - 1] = id;
         s_state = State::Active;
         s_wantRejoin = false;
+        s_rejoinWaitFrames = 0;
 
         // window 0 = top / camera 0 / P1; window 1 = bottom / camera 1 / P2.
         // windowNum stays 1 until camera 1's init_phase2 raises it (the camera
@@ -295,6 +308,7 @@ void tick() {
         applySplitLayout(1, /*forceNum*/ true);
         s_state = State::Solo;
         s_wantRejoin = true;
+        s_rejoinWaitFrames = 0;
         DuskLog.info("coop: guest Link P2 gone (scene change), back to Solo");
     }
 
@@ -309,6 +323,13 @@ void tick() {
             // mid-create, alloc failure) just retries next tick.
             spawnGuest(1);
         }
+        // a rejoin that never lands (quit-to-title tore the play session
+        // down) must not survive into the next loaded save — time it out
+        if (s_wantRejoin && ++s_rejoinWaitFrames > kRejoinTimeoutFrames) {
+            s_wantRejoin = false;
+            s_rejoinWaitFrames = 0;
+            DuskLog.info("coop: pending P2 rejoin timed out, abandoned");
+        }
     } else if (s_state == State::Active) {
         // leave: hold START on pad 2 (~2s at 30fps logic). Only honored while
         // Active — a stashed (invisible) P2 can't leave. Only despawn once
@@ -319,11 +340,12 @@ void tick() {
             despawnGuest(1);
             holdFrames = 0;
         } else if (shouldStash()) {
-            // hide + freeze the guest, give P1 the full screen. Camera 1
-            // stays alive (window 1 just isn't drawn); isSplitActive() going
-            // false also releases the dKy/grass camera-0 pins — vanilla
-            // full-screen rendering. A guest still mid-create has no actor to
-            // flag yet; the Stashed branch below picks it up once it exists.
+            // Single P1 window while stashed. isSplitActive() goes false, which
+            // releases the split-only renderer gates; the guest's camera is
+            // suspended separately in d_camera.cpp (camera_execute/camera_draw
+            // early-return during Stashed) so it can't stomp shared view state.
+            // A guest still mid-create has no actor to flag yet; the Stashed
+            // branch below picks it up once it exists.
             if (fopAc_ac_c* guest = getGuestActor(1)) {
                 fopAcM_OnStatus(guest, kSuspendStatus);
             }
@@ -347,9 +369,11 @@ void tick() {
     } else if (s_state == State::Stashed) {
         holdFrames = 0;
         fopAc_ac_c* guest = getGuestActor(1);
-        if (!shouldStash()) {
+        if (!shouldStash() && daPy_getPlayerActorClass() != NULL) {
             // restore: unfreeze next to P1 (the stash context likely moved
-            // P1 — a dropped-off horse ride, a cutscene warp).
+            // P1 — a dropped-off horse ride, a cutscene warp). If P1 is gone
+            // (scene teardown edge) stay Stashed this tick — gone-detection
+            // will clean up the guest shortly.
             if (guest != NULL) {
                 snapGuestToP1(guest, 1);
                 fopAcM_OffStatus(guest, kSuspendStatus);
