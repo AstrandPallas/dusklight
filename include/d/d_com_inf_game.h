@@ -873,6 +873,7 @@ public:
     void clearPlayerStatus(int param_0, int i, u32 flag) { mPlayerStatus[param_0][i] &= ~flag; }
 
     void setCurrentWindow(dDlst_window_c* i_window) { mCurrentWindow = i_window; }
+    dDlst_window_c* getCurrentWindow() { return mCurrentWindow; }
     void setCurrentView(view_class* i_view) { mCurrentView = i_view; }
     void setCurrentViewport(view_port_class* i_viewport) { mCurrentViewport = i_viewport; }
     J2DGrafContext* getCurrentGrafPort() { return (J2DGrafContext*)mCurrentGrafPort; }
@@ -4318,6 +4319,10 @@ inline void dComIfGp_clearPlayerStatus1(int param_0, u32 flag) {
 
 inline void dComIfGp_setCurrentWindow(dDlst_window_c* i_window) {
     g_dComIfG_gameInfo.play.setCurrentWindow(i_window);
+}
+
+inline dDlst_window_c* dComIfGp_getCurrentWindow() {
+    return g_dComIfG_gameInfo.play.getCurrentWindow();
 }
 
 inline void dComIfGp_setCurrentView(view_class* i_view) {

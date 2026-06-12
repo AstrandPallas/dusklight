@@ -13,6 +13,7 @@
 #include "m_Do/m_Do_lib.h"
 #include <cstring>
 #if TARGET_PC
+#include "dusk/coop.h"
 #include "dusk/frame_interpolation.h"
 #endif
 
@@ -125,6 +126,21 @@ static GXTexObj* load_cached_tex(CachedTexObjs<N>& cache, ResTIMG* img, GXTexMap
     dKyr_set_btitex_common(&cache.texObj[slot], img, mapID);
     return &cache.texObj[slot];
 }
+
+// coop: sun/moon/lens-flare geometry is baked once per frame against camera 0,
+// but the packets replay once per split window — returns the camera of the
+// window currently being drawn when it is NOT camera 0 (NULL in solo and for
+// window 0, where the baked values are already correct).
+static camera_class* dKyr_coop_window_camera() {
+    if (!dusk::coop::isSplitActive()) {
+        return NULL;
+    }
+    dDlst_window_c* window = dComIfGp_getCurrentWindow();
+    if (window == NULL || window->getCameraID() == 0) {
+        return NULL;
+    }
+    return (camera_class*)dComIfGp_getCamera(window->getCameraID());
+}
 #endif
 
 void dKyr_lenzflare_move() {
@@ -154,6 +170,14 @@ void dKyr_lenzflare_move() {
     center.x = FB_WIDTH / 2;
     center.y = FB_HEIGHT / 2;
     center.z = 0.0f;
+#if TARGET_PC
+    // coop: mDoLib_project ran with the pinned camera-0 viewport (window 0 =
+    // top half of the FB), so proj.y is window-relative — keep the screen
+    // center in the same space
+    if (dusk::coop::isSplitActive() && dComIfGd_getViewport() != NULL) {
+        center.y = 0.5f * dComIfGd_getViewport()->height;
+    }
+#endif
     dKyr_get_vectle_calc(&center, &proj, &vect);
 
     lenz_packet->field_0x94 = cM_atan2s(vect.x, vect.y);
@@ -251,6 +275,21 @@ void dKyr_sun_move() {
         cXyz proj;
         mDoLib_project(sun_packet->mPos, &proj);
 
+        f32 screen_center_y = FB_HEIGHT / 2;
+        f32 screen_bottom_y = 458.0f;
+#if TARGET_PC
+        // coop: mDoLib_project ran with the pinned camera-0 viewport (window 0
+        // = top half of the FB), so proj.y is window-relative — express the
+        // screen-center swell and the offscreen cull bound in the same space,
+        // otherwise the peekZ probes sample rows in P2's half and the falloff
+        // center sits on P1's bottom edge
+        if (dusk::coop::isSplitActive() && dComIfGd_getViewport() != NULL) {
+            f32 window_h = dComIfGd_getViewport()->height;
+            screen_center_y = 0.5f * window_h;
+            screen_bottom_y = window_h + (458.0f - FB_HEIGHT);
+        }
+#endif
+
         for (int i = 0; i < 5; i++) {
             cXyz chkpnt = proj;
 
@@ -264,7 +303,7 @@ void dKyr_sun_move() {
             chkpnt.x -= sun_chkpnt[i][0];
             chkpnt.y -= sun_chkpnt[i][1];
 
-            if (chkpnt.x > 0.0f && chkpnt.x < FB_WIDTH && chkpnt.y > border_y && chkpnt.y < 458.0f - border_y) {
+            if (chkpnt.x > 0.0f && chkpnt.x < FB_WIDTH && chkpnt.y > border_y && chkpnt.y < screen_bottom_y - border_y) {
                 if (sun_packet->field_0x44[i] >= 0xFFFFFF) {
                     numPointsVisible++;
                     if (i == 0) {
@@ -297,7 +336,7 @@ void dKyr_sun_move() {
 
         cXyz center;
         center.x = FB_WIDTH / 2;
-        center.y = FB_HEIGHT / 2;
+        center.y = screen_center_y;
         center.z = 0.0f;
 
         lenz_packet->mDistFalloff = center.abs(proj);
@@ -2382,6 +2421,19 @@ void dKyr_drawSun(Mtx drawMtx, cXyz* ppos, GXColor& unused, u8** tex) {
     camera_class* camera = (camera_class*)dComIfGp_getCamera(0);
     f32 rot = 0.0f;
 
+#if TARGET_PC
+    // coop: this packet replays once per split window, but ppos/camera are
+    // baked against camera 0 — re-anchor to the camera this window draws with
+    // so the sun/moon keep their world direction instead of tracking P1
+    cXyz coop_pos;
+    camera_class* coop_cam = dKyr_coop_window_camera();
+    if (coop_cam != NULL) {
+        coop_pos = *ppos + (coop_cam->view.lookat.eye - camera->view.lookat.eye);
+        ppos = &coop_pos;
+        camera = coop_cam;
+    }
+#endif
+
     u8 draw_moon = false;
     u8 draw_sun = false;
     u16 date = dComIfGs_getDate();
@@ -2524,6 +2576,12 @@ void dKyr_drawSun(Mtx drawMtx, cXyz* ppos, GXColor& unused, u8** tex) {
                 sun_packet->field_0x29 = 1;
                 return;
             }
+#if TARGET_PC
+            // coop: billboard against this window's camera, not the pinned one
+            if (coop_cam != NULL) {
+                MTXInverse(coop_cam->view.viewMtxNoTrans, camMtx);
+            }
+#endif
 
 #if TARGET_PC
             static CachedTexObjs<8> texobj;
@@ -2751,6 +2809,28 @@ void dKyr_drawLenzflare(Mtx drawMtx, cXyz* ppos, GXColor& param_2, u8** tex) {
     dKankyo_sun_Packet* sun_packet = g_env_light.mpSunPacket;
     camera_class* camera = (camera_class*)dComIfGp_getCamera(0);
 
+#if TARGET_PC
+    // coop: this packet replays once per split window, but the flare chain is
+    // baked against camera 0's eye — shift the whole chain by the eye delta so
+    // each window sees the sun in the same WORLD direction (it stops sliding
+    // around with P1). The chain axis itself stays P1's view axis; the trailing
+    // flare circles are alpha-gated by shared P1-derived falloff anyway.
+    cXyz coop_positions[8];
+    cXyz sun_pos0 = sun_packet->mPos[0];
+    camera_class* coop_cam = dKyr_coop_window_camera();
+    if (coop_cam != NULL) {
+        cXyz eye_delta = coop_cam->view.lookat.eye - camera->view.lookat.eye;
+        for (int i = 0; i < 8; i++) {
+            coop_positions[i] = ppos[i] + eye_delta;
+        }
+        ppos = coop_positions;
+        sun_pos0 += eye_delta;
+        camera = coop_cam;
+    }
+#else
+    cXyz sun_pos0 = sun_packet->mPos[0];
+#endif
+
     static s16 S_rot_work1 = 0;
     static s16 S_rot_work2 = 0;
 
@@ -2794,6 +2874,12 @@ void dKyr_drawLenzflare(Mtx drawMtx, cXyz* ppos, GXColor& param_2, u8** tex) {
         } else {
             return;
         }
+#if TARGET_PC
+        // coop: billboard against this window's camera, not the pinned one
+        if (coop_cam != NULL) {
+            MTXInverse(coop_cam->view.viewMtxNoTrans, camMtx);
+        }
+#endif
 
         j3dSys.reinitGX();
 
@@ -2831,12 +2917,25 @@ void dKyr_drawLenzflare(Mtx drawMtx, cXyz* ppos, GXColor& param_2, u8** tex) {
         if (sun_packet->field_0x6c > 0.0f) {
             spC = S_rot_work1 - 0x7F6;
             spA = S_rot_work2 + 0x416B;
-            S_rot_work1 += 8;
-            S_rot_work2 -= 14;
+#if TARGET_PC
+            // coop: advance the ray phase once per frame (window 0 / solo),
+            // not once per replayed window
+            if (coop_cam == NULL)
+#endif
+            {
+                S_rot_work1 += 8;
+                S_rot_work2 -= 14;
+            }
 
             if (dComIfGd_getView() != NULL) {
                 MTXInverse(dComIfGd_getView()->viewMtxNoTrans, camMtx);
             }
+#if TARGET_PC
+            // coop: billboard against this window's camera, not the pinned one
+            if (coop_cam != NULL) {
+                MTXInverse(coop_cam->view.viewMtxNoTrans, camMtx);
+            }
+#endif
 
             GXSetNumChans(1);
             GXSetChanCtrl(GX_COLOR0, GX_DISABLE, GX_SRC_REG, GX_SRC_REG, GX_LIGHT_NULL, GX_DF_CLAMP, GX_AF_NONE);
@@ -2956,25 +3055,25 @@ void dKyr_drawLenzflare(Mtx drawMtx, cXyz* ppos, GXColor& param_2, u8** tex) {
                 spE4.y = sp9C;
                 spE4.z = 0.0f;
                 cMtx_multVec(camMtx, &spE4, &spD8);
-                pos[0].x = sun_packet->mPos[0].x + spD8.x;
-                pos[0].y = sun_packet->mPos[0].y + spD8.y;
-                pos[0].z = sun_packet->mPos[0].z + spD8.z;
+                pos[0].x = sun_pos0.x + spD8.x;
+                pos[0].y = sun_pos0.y + spD8.y;
+                pos[0].z = sun_pos0.z + spD8.z;
 
                 spE4.x = sp98;
                 spE4.y = sp94;
                 spE4.z = 0.0f;
                 cMtx_multVec(camMtx, &spE4, &spD8);
-                pos[1].x = sun_packet->mPos[0].x + spD8.x;
-                pos[1].y = sun_packet->mPos[0].y + spD8.y;
-                pos[1].z = sun_packet->mPos[0].z + spD8.z;
+                pos[1].x = sun_pos0.x + spD8.x;
+                pos[1].y = sun_pos0.y + spD8.y;
+                pos[1].z = sun_pos0.z + spD8.z;
 
                 spE4.x = sp90;
                 spE4.y = sp8C;
                 spE4.z = 0.0f;
                 cMtx_multVec(camMtx, &spE4, &spD8);
-                pos[2].x = sun_packet->mPos[0].x + spD8.x;
-                pos[2].y = sun_packet->mPos[0].y + spD8.y;
-                pos[2].z = sun_packet->mPos[0].z + spD8.z;
+                pos[2].x = sun_pos0.x + spD8.x;
+                pos[2].y = sun_pos0.y + spD8.y;
+                pos[2].z = sun_pos0.z + spD8.z;
 
                 GXBegin(GX_TRIANGLES, GX_VTXFMT0, 3);
                 GXPosition3f32(pos[0].x, pos[0].y, pos[0].z);
