@@ -1,6 +1,7 @@
 #include "dusk/coop/coop_manager.hpp"
 
 #include "SSystem/SComponent/c_malloc.h"
+#include "dusk/coop_game.h"
 #include "d/actor/d_a_player.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_demo.h"
@@ -150,6 +151,27 @@ int guestPlayerNo(unsigned int procID) {
         if (s_guestProcID[i] == procID) return i + 1;
     }
     return -1;
+}
+
+fopAc_ac_c* nearestPlayer(const cXyz& i_pos) {
+    fopAc_ac_c* best = dComIfGp_getPlayer(0);
+    // Solo/Disabled have no guests, and Stashed guests are frozen/invisible
+    // and must not draw aggro — all three pin targeting to P1.
+    if (s_state != State::Active || best == NULL) return best;
+    f32 bestDist = best->current.pos.abs2(i_pos);
+    for (int i = 1; i < kMaxPlayers; i++) {
+        fopAc_ac_c* guest = dComIfGp_getPlayer(i);
+        if (guest == NULL) continue;  // empty slot / guest mid-create
+        // belt-and-suspenders for the Active->Stashed transition frame: a
+        // suspended guest never runs execute and can't be a target
+        if (fopAcM_CheckStatus(guest, kSuspendStatus)) continue;
+        f32 dist = guest->current.pos.abs2(i_pos);
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = guest;
+        }
+    }
+    return best;
 }
 
 // playerNo 1..3; v1 only uses 1.

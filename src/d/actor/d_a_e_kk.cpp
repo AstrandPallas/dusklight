@@ -11,6 +11,10 @@
 #include "d/d_item.h"
 #include "f_op/f_op_actor_enemy.h"
 
+#if TARGET_PC
+#include "dusk/coop_game.h"
+#endif
+
 class daE_KK_HIO_c : public JORReflexible {
 public:
     daE_KK_HIO_c();
@@ -333,11 +337,17 @@ void daE_KK_c::damage_check() {
 }
 
 void daE_KK_c::nextActionCheck() {
+#if TARGET_PC
+    // coop: range/LOS/height gates below all run against the chosen (nearest)
+    // target — the same one the fopAcM_searchPlayer* calls measure
+    daPy_py_c* player = (daPy_py_c*)dusk::coop::nearestPlayer(current.pos);
+#else
     daPy_py_c* player = (daPy_py_c*)dComIfGp_getPlayer(0);
+#endif
     if (!dComIfGp_event_runCheck() && fopAcM_searchPlayerDistance(this) > l_HIO.direct_attack_range &&
         fopAcM_searchPlayerDistance(this) <= l_HIO.spear_throw_range)
     {
-        if (!fopAcM_otherBgCheck(this, dComIfGp_getPlayer(0)) &&
+        if (!fopAcM_otherBgCheck(this, player) &&
             eyePos.y + 200.0f >= player->current.pos.y)
         {
             setActionMode(3, 0);
@@ -345,14 +355,14 @@ void daE_KK_c::nextActionCheck() {
         }
     }
     if (!dComIfGp_event_runCheck() && fopAcM_searchPlayerDistance(this) <= l_HIO.direct_attack_range &&
-        !fopAcM_otherBgCheck(this, dComIfGp_getPlayer(0)))
+        !fopAcM_otherBgCheck(this, player))
     {
-        if (daPy_getPlayerActorClass()->getDamageWaitTimer() != 0 && mActionMode != 0) {
+        if (player->getDamageWaitTimer() != 0 && mActionMode != 0) {
             setActionMode(0, 0);
             return;
         }
         if (!dComIfGp_event_runCheck()) {
-            if (!fopAcM_otherBgCheck(this, dComIfGp_getPlayer(0)) &&
+            if (!fopAcM_otherBgCheck(this, player) &&
                 !dComIfGp_checkPlayerStatus0(0, 0x100) && eyePos.y + 50.0f > player->current.pos.y)
             {
                 setActionMode(8, 0);
@@ -411,12 +421,17 @@ void daE_KK_c::mDeadEffSet(cXyz& param_0) {
 }
 
 void daE_KK_c::executeWait() {
+#if TARGET_PC
+    // coop: wake/attack gates run against the chosen (nearest) target
+    daPy_py_c* player = (daPy_py_c*)dusk::coop::nearestPlayer(current.pos);
+#else
     daPy_py_c* player = (daPy_py_c*)dComIfGp_getPlayer(0);
+#endif
     switch (mMoveMode) {
     case 0:
         if (fopAcM_searchPlayerDistance(this) <= l_HIO.direct_attack_range &&
             current.pos.y + 100.0f >= player->current.pos.y &&
-            !fopAcM_otherBgCheck(this, dComIfGp_getPlayer(0)))
+            !fopAcM_otherBgCheck(this, player))
         {
             setBck(0x1A, 2, 3.0f, 1.0f);
             mTimer = 30;
@@ -428,7 +443,7 @@ void daE_KK_c::executeWait() {
         break;
 
     case 1:
-        if (field_0x672 == 0 && daPy_getPlayerActorClass()->getDamageWaitTimer() == 0) {
+        if (field_0x672 == 0 && player->getDamageWaitTimer() == 0) {
             nextActionCheck();
         }
         break;
@@ -556,11 +571,16 @@ void daE_KK_c::executeSpearThrow() {
         break;
 
     case 2:
+#if TARGET_PC
+        // coop: dive-attack gate against the chosen (nearest) target
+        if (fopAc_ac_c* player = dusk::coop::nearestPlayer(current.pos))
+#else
+        if (fopAc_ac_c* player = dComIfGp_getPlayer(0))
+#endif
         if (!dComIfGp_event_runCheck() && fopAcM_searchPlayerDistance(this) <= l_HIO.direct_attack_range &&
-            !fopAcM_otherBgCheck(this, dComIfGp_getPlayer(0)) && (s32)mpMorfSO->getFrame() < 0x17 &&
+            !fopAcM_otherBgCheck(this, player) && (s32)mpMorfSO->getFrame() < 0x17 &&
             !dComIfGp_event_runCheck() && !dComIfGp_checkPlayerStatus0(0, 0x100))
         {
-            fopAc_ac_c* player = dComIfGp_getPlayer(0);
             if (!fopAcM_otherBgCheck(this, player) && eyePos.y + 50.0f > player->current.pos.y) {
                 setActionMode(8, 0);
                 break;

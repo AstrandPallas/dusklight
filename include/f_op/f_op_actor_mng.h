@@ -718,32 +718,50 @@ inline void make_prm_warp_hole(u32* o_params, u8 prm1, u8 prm2, u8 prm3) {
 
 fopAc_ac_c* dComIfGp_getPlayer(int);
 
+#if TARGET_PC
+namespace dusk::coop {
+fopAc_ac_c* nearestPlayer(const cXyz& i_pos);  // defined via dusk/coop_game.h
+}
+#endif
+
+// coop: target chooser for the player-relative helpers below. Enemies (and
+// anything else measuring distance/angle "to the player") acquire the nearest
+// live player instead of always P1; outside active split co-op this is P1, so
+// solo behavior is unchanged.
+inline fopAc_ac_c* fopAcM_searchPlayerTarget(const fopAc_ac_c* actor) {
+#if TARGET_PC
+    return dusk::coop::nearestPlayer(actor->current.pos);
+#else
+    return dComIfGp_getPlayer(0);
+#endif
+}
+
 inline s16 fopAcM_searchPlayerAngleY(const fopAc_ac_c* actor) {
-    return fopAcM_searchActorAngleY(actor, dComIfGp_getPlayer(0));
+    return fopAcM_searchActorAngleY(actor, fopAcM_searchPlayerTarget(actor));
 }
 
 inline s16 fopAcM_searchPlayerAngleX(const fopAc_ac_c* actor) {
-    return fopAcM_searchActorAngleX(actor, dComIfGp_getPlayer(0));
+    return fopAcM_searchActorAngleX(actor, fopAcM_searchPlayerTarget(actor));
 }
 
 inline f32 fopAcM_searchPlayerDistanceY(const fopAc_ac_c* actor) {
-    return fopAcM_searchActorDistanceY(actor, dComIfGp_getPlayer(0));
+    return fopAcM_searchActorDistanceY(actor, fopAcM_searchPlayerTarget(actor));
 }
 
 inline f32 fopAcM_searchPlayerDistanceXZ2(const fopAc_ac_c* actor) {
-    return fopAcM_searchActorDistanceXZ2(actor, dComIfGp_getPlayer(0));
+    return fopAcM_searchActorDistanceXZ2(actor, fopAcM_searchPlayerTarget(actor));
 }
 
 inline f32 fopAcM_searchPlayerDistanceXZ(const fopAc_ac_c* actor) {
-    return fopAcM_searchActorDistanceXZ(actor, dComIfGp_getPlayer(0));
+    return fopAcM_searchActorDistanceXZ(actor, fopAcM_searchPlayerTarget(actor));
 }
 
 inline f32 fopAcM_searchPlayerDistance(const fopAc_ac_c* actor) {
-    return fopAcM_searchActorDistance(actor, dComIfGp_getPlayer(0));
+    return fopAcM_searchActorDistance(actor, fopAcM_searchPlayerTarget(actor));
 }
 
 inline s32 fopAcM_seenPlayerAngleY(const fopAc_ac_c* i_actor) {
-    return fopAcM_seenActorAngleY(i_actor, dComIfGp_getPlayer(0));
+    return fopAcM_seenActorAngleY(i_actor, fopAcM_searchPlayerTarget(i_actor));
 }
 
 inline s16 fopAcM_toActorShapeAngleY(const fopAc_ac_c* i_actorA, const fopAc_ac_c* i_actorB) {
@@ -751,7 +769,7 @@ inline s16 fopAcM_toActorShapeAngleY(const fopAc_ac_c* i_actorA, const fopAc_ac_
 }
 
 inline s16 fopAcM_toPlayerShapeAngleY(const fopAc_ac_c* i_actor) {
-    return fopAcM_toActorShapeAngleY(i_actor, dComIfGp_getPlayer(0));
+    return fopAcM_toActorShapeAngleY(i_actor, fopAcM_searchPlayerTarget(i_actor));
 }
 
 inline void fopAcM_seStartCurrent(const fopAc_ac_c* actor, u32 sfxID, u32 param_2) {

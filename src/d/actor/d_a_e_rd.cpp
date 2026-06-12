@@ -26,6 +26,10 @@
 #include "f_op/f_op_actor_enemy.h"
 #include <cstring>
 
+#if TARGET_PC
+#include "dusk/coop_game.h"
+#endif
+
 class daE_RD_HIO_c : public JORReflexible {
 public:
     daE_RD_HIO_c();
@@ -303,12 +307,17 @@ void daE_RD_HIO_c::genMessage(JORMContext* ctext) {
 #endif
 
 static fopAc_ac_c* get_pla(fopAc_ac_c* actor) {
+#if TARGET_PC
+    // coop: candidate player target is whichever live player is nearest
+    fopAc_ac_c* pla = dusk::coop::nearestPlayer(actor->current.pos);
+#else
     fopAc_ac_c* pla = dComIfGp_getPlayer(0);
+#endif
     // "coach" refers to the Ilia/Telma transport wagon:
     fopAc_ac_c* coach = fopAcM_SearchByName(fpcNm_NPC_COACH_e);
 
     if (coach == NULL) {
-        return dComIfGp_getPlayer(0);
+        return pla;  // coop: was a re-fetch of dComIfGp_getPlayer(0) == pla
     }
 
     f32 pla_x, coach_x, pla_z, coach_z;
@@ -321,7 +330,7 @@ static fopAc_ac_c* get_pla(fopAc_ac_c* actor) {
         return coach;
     }
 
-    return dComIfGp_getPlayer(0);
+    return pla;  // coop: was a re-fetch of dComIfGp_getPlayer(0) == pla
 }
 
 static void anm_init(e_rd_class* i_this, int i_no, f32 i_morf, u8 i_mode, f32 i_speed) {
@@ -1265,7 +1274,12 @@ static void e_rd_normal(e_rd_class* i_this) {
 
 static void e_rd_fight_run(e_rd_class* i_this) {
     fopEn_enemy_c* enemy = (fopEn_enemy_c*)&i_this->enemy;
+#if TARGET_PC
+    // coop: height-adjust the chase distance against the chosen target
+    fopAc_ac_c* pla = get_pla(enemy);
+#else
     fopAc_ac_c* pla = dComIfGp_getPlayer(0);
+#endif
     cXyz sp64, sp70;
     f32 speed = 0.0f;
     s8 attack_flag = true;
@@ -2718,7 +2732,12 @@ static void e_rd_s_damage(e_rd_class* i_this) {
                     i_this->action = ACTION_BOW2;
                 } else if (i_this->old_action == 26) {
                     i_this->action = ACTION_BOW3;
+#if TARGET_PC
+                // coop: line-of-sight gate against the chosen target
+                } else if (!other_bg_check(i_this, actor = get_pla(&i_this->enemy))) {
+#else
                 } else if (!other_bg_check(i_this, actor = dComIfGp_getPlayer(0))) {
+#endif
                     i_this->action = ACTION_FIGHT_RUN;
                     i_this->timer[0] = 40;
                 } else {
@@ -5004,7 +5023,14 @@ static void action(e_rd_class* i_this) {
 
     i_this->aim_type = 0;
 
+#if TARGET_PC
+    // coop: "is the target a player (vs the coach)?" — get_pla may return a
+    // guest Link now, which must take the player branch, not the coach branch
+    // (the else arm sets the huge coach-chase attack_range)
+    if (fopAcM_GetGroup(actor) == fopAc_PLAYER_e) {
+#else
     if (actor == dComIfGp_getPlayer(0)) {
+#endif
         i_this->dis = fopAcM_searchPlayerDistance(enemy);
         if (daPy_getPlayerActorClass()->checkHorseRide()) {
             i_this->dis -= BREG_F(17) + 100.0f;
@@ -6861,7 +6887,13 @@ static int daE_RD_Execute(e_rd_class* i_this) {
                 angl.x = -cM_atan2s(mae.y, JMAFastSqrt(SQUARE(mae.x) + SQUARE(mae.z)));
             } else {
                 fopAc_ac_c* actor = get_pla(enemy);
+#if TARGET_PC
+                // coop: flag 32 marks a coach-aimed arrow — a guest Link
+                // target is still a player, not the coach
+                if (fopAcM_GetGroup(actor) != fopAc_PLAYER_e) {
+#else
                 if (actor != dComIfGp_getPlayer(0)) {
+#endif
                     parameter |= 32;
                 }
 

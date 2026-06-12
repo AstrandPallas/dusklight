@@ -11,6 +11,7 @@
 #include "f_op/f_op_actor_enemy.h"
 
 #if TARGET_PC
+#include "dusk/coop_game.h"
 #include "dusk/frame_interpolation.h"
 #endif
 
@@ -150,7 +151,13 @@ static int daE_DB_Draw(e_db_class* i_this) {
 
 static BOOL pl_check(e_db_class* i_this, f32 i_range) {
     fopAc_ac_c* actor = &i_this->enemy;
+#if TARGET_PC
+    // coop: detection LOS against the chosen (nearest) target — the same one
+    // dist_to_player is measured against in action()
+    fopAc_ac_c* player = dusk::coop::nearestPlayer(actor->current.pos);
+#else
     fopAc_ac_c* player = dComIfGp_getPlayer(0);
+#endif
 
     if (i_this->dist_to_player < i_range && !fopAcM_otherBgCheck(actor, player)) {
         return TRUE;
@@ -523,9 +530,15 @@ static void e_db_wait(e_db_class* i_this) {
     }
 
     if (i_this->field_0x850 != 0) {
+#if TARGET_PC
+        // coop: pitch the head toward the chosen (nearest) target's eyes —
+        // angle_to_player above already tracks it via fopAcM_searchPlayerAngleY
+        fopAc_ac_c* player = dusk::coop::nearestPlayer(actor->current.pos);
+#else
         fopAc_ac_c* player = dComIfGp_getPlayer(0);
+#endif
         cLib_addCalcAngleS2(&actor->shape_angle.y, (i_this->angle_to_player + 0x8000), 8, 0x800);
-        
+
         cXyz sp24 = player->eyePos - actor->current.pos;
         int sp8 = cM_atan2s(sp24.y, JMAFastSqrt(SQUARE(sp24.x) + SQUARE(sp24.z)));
         cLib_addCalcAngleS2(&actor->shape_angle.x, (sp8 + 0x8000), 8, 0x400);

@@ -2074,7 +2074,13 @@ BOOL fopAcM_wayBgCheck(fopAc_ac_c const* param_0, f32 param_1, f32 param_2) {
 }
 
 BOOL fopAcM_plAngleCheck(fopAc_ac_c const* i_actor, s16 i_angle) {
+#if TARGET_PC
+    // coop: relative-facing check against the nearest player (the same target
+    // the fopAcM_searchPlayer* helpers pick), not always P1
+    fopAc_ac_c* player = fopAcM_searchPlayerTarget(i_actor);
+#else
     fopAc_ac_c* player = dComIfGp_getPlayer(0);
+#endif
     s16 angle = i_actor->shape_angle.y - player->shape_angle.y;
     if (angle <= i_angle && angle >= (s16)-i_angle) {
         return FALSE;
