@@ -1004,7 +1004,7 @@ int daAlink_c::procCutNormalInit(int i_type) {
     setSwordComboVoice();
     mProcVar5.mCutTurnChargeCheckTimer = 0;
 
-    dComIfGp_setPlayerStatus0(0, 0x8000);
+    dComIfGp_setPlayerStatus0(mPlayerNo, 0x8000);
     setCutWaterDropEffect();
 
     int cutDir = getCutDirection();
@@ -1256,7 +1256,7 @@ int daAlink_c::procCutFinishInit(int i_type) {
     }
 
     mProcVar5.mCutTurnChargeCheckTimer = 0;
-    dComIfGp_setPlayerStatus0(0, 0x8000);
+    dComIfGp_setPlayerStatus0(mPlayerNo, 0x8000);
     setCutWaterDropEffect();
     initCutAtnActorSearch();
 
@@ -1397,7 +1397,7 @@ int daAlink_c::procCutFinishJumpUpInit() {
     setSwordVoiceSe(Z2SE_AL_V_SOTOMO_ATK);
     mProcVar5.field_0x3012 = 0;
     field_0x3478 = current.pos.y;
-    dComIfGp_setPlayerStatus0(0, 0x8000);
+    dComIfGp_setPlayerStatus0(mPlayerNo, 0x8000);
     setCutWaterDropEffect();
     field_0x2fd0 = 1;
     return 1;
@@ -1596,7 +1596,7 @@ int daAlink_c::procCutJumpInit(BOOL i_isAirCut) {
                     mpHIO->mCut.m.mSwordRadius);
     setCutType(CUT_TYPE_JUMP);
     setSwordComboVoice();
-    dComIfGp_setPlayerStatus0(0, 0x8000);
+    dComIfGp_setPlayerStatus0(mPlayerNo, 0x8000);
     field_0x3198 = 2;
     return 1;
 }
@@ -1791,7 +1791,7 @@ int daAlink_c::procCutTurnInit(int param_0, int param_1) {
     mProcVar0.field_0x3008 = cutData->mStopTime;
     current.angle.y = shape_angle.y;
     field_0x3180 = 0;
-    dComIfGp_setPlayerStatus0(0, 0x8000);
+    dComIfGp_setPlayerStatus0(mPlayerNo, 0x8000);
     mNormalSpeed = 0.0f;
     mProcVar5.field_0x3012 = 0;
     setCutWaterDropEffect();
@@ -1915,7 +1915,7 @@ int daAlink_c::procCutTurnMoveInit(BOOL param_0) {
 
     mProcVar2.field_0x300c = param_0;
     onNoResetFlg1(FLG1_UNK_10000000);
-    dComIfGp_setPlayerStatus0(0, 0x40000000);
+    dComIfGp_setPlayerStatus0(mPlayerNo, 0x40000000);
     return 1;
 }
 
@@ -2118,7 +2118,7 @@ int daAlink_c::procCutDownInit() {
 
     setSwordVoiceSe(Z2SE_AL_V_TODOME_JUMP);
     setCutType(CUT_TYPE_DOWN);
-    dComIfGp_setPlayerStatus1(0, 0x400000);
+    dComIfGp_setPlayerStatus1(mPlayerNo, 0x400000);
     return 1;
 }
 
@@ -2175,7 +2175,7 @@ int daAlink_c::procCutDownLandInit(fopEn_enemy_c* i_enemy) {
     onResetFlg1(RFLG1_UNK_30);
     mProcVar4.field_0x3010 = 0;
 
-    dComIfGp_setPlayerStatus1(0, 0x400000);
+    dComIfGp_setPlayerStatus1(mPlayerNo, 0x400000);
     field_0x3588 = l_halfAtnWaitBaseAnime;
     field_0x2f99 = 4;
     return 1;

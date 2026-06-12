@@ -46,10 +46,10 @@ void daAlink_c::handleWolfHowl() {
         if (mLinkAcch.ChkGroundHit() && !checkModeFlg(MODE_PLAYER_FLY) && !checkMagneBootsOn()) {
             if (checkMidnaRide()) {
                 if ((checkWolf() &&
-                     (checkModeFlg(MODE_UNK_1000) || dComIfGp_checkPlayerStatus0(0, 0x10))) ||
+                     (checkModeFlg(MODE_UNK_1000) || dComIfGp_checkPlayerStatus0(mPlayerNo, 0x10))) ||
                     (!checkWolf() &&
                      (checkEventRun() || getMidnaActor()->checkMetamorphoseEnable()) &&
-                     (checkModeFlg(4) || dComIfGp_checkPlayerStatus0(0, 0x10))))
+                     (checkModeFlg(4) || dComIfGp_checkPlayerStatus0(mPlayerNo, 0x10))))
                 {
                     canHowl = true;
                 }
@@ -124,10 +124,10 @@ void daAlink_c::handleQuickTransform() {
     if (mLinkAcch.ChkGroundHit() && !checkModeFlg(MODE_PLAYER_FLY) && !checkMagneBootsOn()) {
         if (checkMidnaRide()) {
             if ((checkWolf() &&
-                 (checkModeFlg(MODE_UNK_1000) || dComIfGp_checkPlayerStatus0(0, 0x10))) ||
+                 (checkModeFlg(MODE_UNK_1000) || dComIfGp_checkPlayerStatus0(mPlayerNo, 0x10))) ||
                 (!checkWolf() &&
                  (checkEventRun() || getMidnaActor()->checkMetamorphoseEnable()) &&
-                 (checkModeFlg(4) || dComIfGp_checkPlayerStatus0(0, 0x10))))
+                 (checkModeFlg(4) || dComIfGp_checkPlayerStatus0(mPlayerNo, 0x10))))
             {
                 canTransform = true;
             }

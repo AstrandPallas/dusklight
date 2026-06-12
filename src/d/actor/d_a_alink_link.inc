@@ -117,7 +117,7 @@ BOOL daAlink_c::setBodyAngleToCamera() {
                 var_f31 *= 0.6f;
             }
 
-            if (dComIfGp_checkPlayerStatus0(0, 0x200000)) {
+            if (dComIfGp_checkPlayerStatus0(mPlayerNo, 0x200000)) {
                 var_f31 /= dComIfGp_getCameraZoomScale(field_0x317c);
             }
 
@@ -148,7 +148,7 @@ BOOL daAlink_c::setBodyAngleToCamera() {
                 gyro_scale *= 0.6f;
             }
 
-            if (dComIfGp_checkPlayerStatus0(0, 0x200000)) {
+            if (dComIfGp_checkPlayerStatus0(mPlayerNo, 0x200000)) {
                 gyro_scale /= dComIfGp_getCameraZoomScale(field_0x317c);
             }
 
@@ -179,7 +179,7 @@ BOOL daAlink_c::setBodyAngleToCamera() {
         }
 
         s16 var_r29;
-        if (!dComIfGp_checkPlayerStatus0(0, 0x202000) && mEquipItem == dItemNo_IRONBALL_e) {
+        if (!dComIfGp_checkPlayerStatus0(mPlayerNo, 0x202000) && mEquipItem == dItemNo_IRONBALL_e) {
             var_r29 = -10000;
         } else {
             var_r29 = mpHIO->mItem.m.mItemFPUpMaxUnk;
@@ -196,7 +196,7 @@ BOOL daAlink_c::setBodyAngleToCamera() {
 }
 
 void daAlink_c::setSubjectMode() {
-    dComIfGp_setPlayerStatus0(0, 0x2000);
+    dComIfGp_setPlayerStatus0(mPlayerNo, 0x2000);
     seStartSystem(Z2SE_SUBJ_VIEW_IN);
 }
 
@@ -271,7 +271,7 @@ int daAlink_c::procCoSubjectivity() {
         return 1;
     }
 
-    if (checkSubjectEnd(FALSE) || (dComIfGp_checkPlayerStatus0(0, 0x200000) && checkSetItemTrigger(dItemNo_HAWK_EYE_e))) {
+    if (checkSubjectEnd(FALSE) || (dComIfGp_checkPlayerStatus0(mPlayerNo, 0x200000) && checkSetItemTrigger(dItemNo_HAWK_EYE_e))) {
         seStartSystem(Z2SE_SUBJ_VIEW_OUT);
         checkWaitAction();
     } else if (!checkWolf() && (checkItemAction() || checkItemChangeFromButton())) {
@@ -301,7 +301,7 @@ int daAlink_c::procCoSwimSubjectivityInit() {
                                 mpHIO->mSwim.m.mWaitInterpolation);
     }
 
-    dComIfGp_setPlayerStatus0(0, 0x100000);
+    dComIfGp_setPlayerStatus0(mPlayerNo, 0x100000);
     mProcVar2.field_0x300c = 0;
 
     return 1;
@@ -347,7 +347,7 @@ int daAlink_c::procCoPeepSubjectivityInit() {
     onPlayerNoDraw();
     setSpecialGravity(0.0f, maxFallSpeed, 0);
     speed.y = 0.0f;
-    dComIfGp_setPlayerStatus0(0, 0x2000);
+    dComIfGp_setPlayerStatus0(mPlayerNo, 0x2000);
     field_0x3478 = 10000000.0f;
     mProcVar2.field_0x300c = shape_angle.y;
 
