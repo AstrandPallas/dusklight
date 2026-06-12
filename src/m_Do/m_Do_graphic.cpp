@@ -50,6 +50,7 @@
 #include <SDL3/SDL_video.h>
 #include "aurora/lib/window.hpp"
 #include "d/actor/d_a_horse.h"
+#include "dusk/coop.h"
 #include "dusk/dusk.h"
 #include "dusk/endian.h"
 #include "dusk/frame_interpolation.h"
@@ -2254,8 +2255,11 @@ int mDoGph_Painter() {
     fapGm_HIO_c::stopCpuTimer("画面キャプチャー用２Ｄ描画まで（レンダリング）");
     #endif
 
-    if (dComIfGp_getWindowNum() != 0) {
-        dDlst_window_c* window_p = dComIfGp_getWindow(0);
+    // coop: run the whole 3D pipeline once per window (split-screen renders the
+    // scene N times; the 2D/HUD pass after this loop still runs once, full-screen).
+    if (dComIfGp_getWindowNum() != 0)
+    for (int wnd = 0; wnd < dComIfGp_getWindowNum(); wnd++) {
+        dDlst_window_c* window_p = dComIfGp_getWindow(wnd);
         int camera_id = window_p->getCameraID();
         camera_process_class* camera_p = dComIfGp_getCamera(camera_id);
 
@@ -2275,7 +2279,10 @@ int mDoGph_Painter() {
 
             view_port_class* view_port = window_p->getViewPort();
 
-            if (view_port->x_orig != 0.0f || view_port->y_orig != 0.0f) {
+            // coop: while split is active, offset viewports are intentional
+            // (each window owns part of the FB) — don't normalize to full-screen.
+            if (!dusk::coop::isSplitActive() &&
+                (view_port->x_orig != 0.0f || view_port->y_orig != 0.0f)) {
                 view_port_class new_port;
                 new_port.x_orig = 0.0f;
                 new_port.y_orig = 0.0f;
@@ -2467,7 +2474,10 @@ int mDoGph_Painter() {
                 fapGm_HIO_c::startCpuTimer();
                 #endif
 
-                GX_DEBUG_GROUP(motionBlure, &camera_p->view);
+                // coop: full-FB capture/composite pass — window 0 only while split
+                if (!dusk::coop::isSplitActive() || wnd == 0) {
+                    GX_DEBUG_GROUP(motionBlure, &camera_p->view);
+                }
 
                 #if DEBUG
                 // "blur filter (Rendering)"
@@ -2476,7 +2486,10 @@ int mDoGph_Painter() {
                 fapGm_HIO_c::startCpuTimer();
                 #endif
 
-                GX_DEBUG_GROUP(drawDepth2, &camera_p->view, view_port, dComIfGp_getCameraZoomForcus(camera_id));
+                // coop: full-FB capture/composite pass — window 0 only while split
+                if (!dusk::coop::isSplitActive() || wnd == 0) {
+                    GX_DEBUG_GROUP(drawDepth2, &camera_p->view, view_port, dComIfGp_getCameraZoomForcus(camera_id));
+                }
                 GXInvalidateTexAll();
                 GXSetClipMode(GX_CLIP_ENABLE);
 
@@ -2599,7 +2612,9 @@ int mDoGph_Painter() {
                                        dComIfGp_getCameraZoomForcus(camera_id));
                 }
 
-                GXSetViewport(0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, 0.0f, 1.0f);
+                // coop: keep the 2D-screen pass inside this window's half
+                GXSetViewport(view_port->x_orig, view_port->y_orig, view_port->width,
+                              view_port->height, view_port->near_z, view_port->far_z);
 
                 Mtx m2;
                 Mtx44 m;
@@ -2647,7 +2662,10 @@ int mDoGph_Painter() {
                 fapGm_HIO_c::startCpuTimer();
                 #endif
 
-                GX_DEBUG_GROUP(mDoGph_gInf_c::getBloom()->draw);
+                // coop: full-FB capture/composite pass — window 0 only while split
+                if (!dusk::coop::isSplitActive() || wnd == 0) {
+                    GX_DEBUG_GROUP(mDoGph_gInf_c::getBloom()->draw);
+                }
                 j3dSys.setViewMtx(camera_p->view.viewMtx);
                 GXSetProjection(camera_p->view.projMtx, GX_PERSPECTIVE);
 

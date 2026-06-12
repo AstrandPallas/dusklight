@@ -29,6 +29,7 @@
 #endif
 
 #if TARGET_PC
+#include "dusk/coop.h"
 #include "dusk/frame_interpolation.h"
 #include "dusk/logging.h"
 #include "dusk/action_bindings.h"
@@ -11095,6 +11096,15 @@ static void preparation(camera_process_class* i_this) {
     dDlst_window_c* window = get_window(camera_id);
     view_port_class* viewport = window->getViewPort();
     f32 aspect = mDoGph_gInf_c::getAspect();
+
+#if TARGET_PC
+    if (dusk::coop::isSplitActive()) {
+        // scale base aspect by this window's shape relative to the full FB
+        // (full-width half-height window → ×2; quadrant → ×1)
+        aspect *= (viewport->width / viewport->height) /
+                  ((f32)FB_WIDTH / (f32)FB_HEIGHT);
+    }
+#endif
 
     camera->SetWindow(viewport->width, viewport->height);
     fopCamM_SetAspect((camera_class*)i_this, aspect);
