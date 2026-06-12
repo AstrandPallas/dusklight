@@ -216,6 +216,8 @@ void registerSettings() {
     // Game
     Register(g_userSettings.game.language);
     Register(g_userSettings.game.enableQuickTransform);
+    Register(g_userSettings.game.coopEnabled);
+    Register(g_userSettings.game.coopDebugSplit);
     Register(g_userSettings.game.hideTvSettingsScreen);
     Register(g_userSettings.game.biggerWallets);
     Register(g_userSettings.game.noReturnRupees);
@@ -314,8 +316,6 @@ void registerSettings() {
     Register(g_userSettings.game.enableLED[2]);
     Register(g_userSettings.game.enableLED[3]);
     Register(g_userSettings.game.swapDirectSelect);
-    Register(g_userSettings.game.coopEnabled);
-    Register(g_userSettings.game.coopDebugSplit);
 
     Register(g_userSettings.backend.isoPath);
     Register(g_userSettings.backend.isoVerification);
