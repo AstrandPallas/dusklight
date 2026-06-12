@@ -11133,9 +11133,19 @@ static void view_setup(camera_process_class* i_this) {
     view->viewMtxNoTrans[1][3] = 0.0f;
     view->viewMtxNoTrans[2][3] = 0.0f;
 
-    dComIfGd_setWindow(window);
-    dComIfGd_setViewport(viewport);
-    dComIfGd_setView(view);
+#if TARGET_PC
+    // coop: the drawlist "current view" globals and the cull frustum below are
+    // shared — view-dependent world systems (grass/flower matrix baking,
+    // sun/lens-flare projection via mDoLib_project) read them once per frame,
+    // so the last camera to write would make the whole world track P2's view;
+    // pin them to P1's camera while split is active
+    if (get_camera_id(a_this) == 0 || !dusk::coop::isSplitActive())
+#endif
+    {
+        dComIfGd_setWindow(window);
+        dComIfGd_setViewport(viewport);
+        dComIfGd_setView(view);
+    }
 
     f32 far_;
     f32 var_f30;
@@ -11153,7 +11163,13 @@ static void view_setup(camera_process_class* i_this) {
         far_ = var_f30;
     }
 
-    mDoLib_clipper::setup(view->fovy, view->aspect, view->near_, far_);
+#if TARGET_PC
+    // coop: same pinning as above for the shared clip frustum
+    if (get_camera_id(a_this) == 0 || !dusk::coop::isSplitActive())
+#endif
+    {
+        mDoLib_clipper::setup(view->fovy, view->aspect, view->near_, far_);
+    }
 }
 
 static void store(camera_process_class* i_camera) {
@@ -11470,7 +11486,16 @@ static int camera_draw(camera_process_class* i_this) {
     mDoGph_gInf_c::setWideZoomProjection(process->view.projMtx);
 #endif
 
-    j3dSys.setViewMtx(process->view.viewMtx);
+#if TARGET_PC
+    // coop: j3dSys's view matrix is shared — the draw-phase packet bakes
+    // (grass, flowers) read it after the cameras draw, so camera 1 writing it
+    // would orient the world to P2's view in both windows. Each window re-sets
+    // it in mDoGph_Painter before rendering, so camera 1 can safely skip it.
+    if (camera_id == 0 || !dusk::coop::isSplitActive())
+#endif
+    {
+        j3dSys.setViewMtx(process->view.viewMtx);
+    }
     cMtx_inverse(process->view.viewMtx, process->view.invViewMtx);
 
 #if TARGET_PC
