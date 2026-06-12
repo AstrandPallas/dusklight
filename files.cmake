@@ -1412,6 +1412,7 @@ set(DOLPHIN_FILES
 
 set(DUSK_FILES
         include/dusk/action_bindings.h
+        include/dusk/coop.h
         include/dusk/endian_gx.hpp
         include/dusk/config.hpp
         include/dusk/dvd_asset.hpp
@@ -1420,6 +1421,8 @@ set(DUSK_FILES
         src/d/actor/d_a_alink_dusk.cpp
         src/dusk/asserts.cpp
         src/dusk/config.cpp
+        src/dusk/coop/coop_manager.cpp
+        src/dusk/coop/coop_manager.hpp
         src/dusk/crash_handler.cpp
         src/dusk/crash_reporting.cpp
         src/dusk/data.cpp

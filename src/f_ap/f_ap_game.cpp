@@ -15,6 +15,7 @@
 #include "d/d_model.h"
 #include "d/d_tresure.h"
 #include "dusk/achievements.h"
+#include "dusk/coop/coop_manager.hpp"
 #include "dusk/frame_interpolation.h"
 #include "dusk/livesplit.h"
 #include "dusk/logging.h"
@@ -743,6 +744,7 @@ static void fapGm_AfterRecord() {
 BOOL isRecording = false;
 
 static void duskExecute() {
+    dusk::coop::tick();
     dusk::input::handleGamepadColor();
     updateAutoSave();
 
