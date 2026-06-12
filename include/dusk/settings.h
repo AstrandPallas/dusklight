@@ -155,6 +155,8 @@ struct UserSettings {
 
         // QoL
         ConfigVar<bool> enableQuickTransform;
+        ConfigVar<bool> coopEnabled;
+        ConfigVar<bool> coopDebugSplit;
         ConfigVar<bool> hideTvSettingsScreen;
         ConfigVar<bool> biggerWallets;
         ConfigVar<bool> noReturnRupees;
