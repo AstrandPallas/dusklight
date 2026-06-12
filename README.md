@@ -1,60 +1,60 @@
 <div align="center">
   <img src="res/logo.png" alt="Logo" width="640">
 
+  <h3>Split-Screen Co-op Fork</h3>
+
   <p align="center">
-    <a href="https://twilitrealm.dev">Official Website</a>
-    •
-    <a href="https://discord.gg/6NpMhefCK9">Discord</a>
+    A fork of <a href="https://github.com/TwilitRealm/dusklight">Dusklight</a> adding local split-screen co-op to Twilight Princess.
   </p>
 </div>
 
-# Overview
+# Dusklight Co-op
 
-Dusklight is a reverse-engineered reimplementation of Twilight Princess.
+This fork adds **local 2-player split-screen co-op** to Dusklight, the reverse-engineered native PC port of *The Legend of Zelda: Twilight Princess*. Player 2 joins as a second Link with their own camera and half of the screen — explore Hyrule and fight together on one PC.
 
-It aims to be as accurate as possible to the original while also providing new options, enhancements, and tools to customize your experience.
+The architecture is built for up to 4 players; this release activates 2.
+
+## How to play
+
+1. Enable **Split-Screen Co-op** in Settings → Gameplay.
+2. Connect a second controller and assign it to **port 2** in the controller settings.
+3. In normal gameplay, **press START on controller 2** — a second Link spawns next to Player 1 and the screen splits (P1 top, P2 bottom).
+4. **Hold START on controller 2 (~2 seconds)** to leave.
+
+Hearts, rupees, and items are shared — you live and die as a team.
+
+## Status: pre-alpha
+
+This is an early, playable preview. Player 1 is always "the" player for world logic; Player 2 is a guest. Current limitations:
+
+- **Cutscenes, menus, and mounts don't handle P2 yet** — Player 2 is *not* hidden during cutscenes or horseback sequences and may behave oddly during them. Leave (hold START) before story moments for best results.
+- Player 2 cannot use Z-targeting/lock-on, X/Y items, or transform; sword, shield, roll, and grab all work.
+- Player 2 disappears on area transitions and auto-rejoin is not in yet — press START again after a load.
+- Enemies primarily target Player 1 (they'll still hurt P2 on contact).
+- Some screen-space effects (bloom, depth of field, motion blur, sun flare) are reduced or anchored to Player 1's view while the screen is split.
+- If Player 2 falls somewhere unrecoverable, leave and rejoin to warp back to Player 1.
+
+Bug reports are welcome on the issues page — please include where you were and what both players were doing.
 
 # Setup
 
 > [!IMPORTANT]
-> Dusklight does *not* provide any copyrighted assets. You must provide your own copy of the original game.
+> Like upstream Dusklight, this fork does *not* provide any copyrighted assets. **You must dump and supply your own copy of the original game.** Only the GameCube USA and EUR releases are supported.
 
 > [!IMPORTANT]
-> At a minimum, Dusklight requires a GPU with support for either D3D12, Vulkan, or Metal. Your experience with specific hardware, operating systems, and drivers may vary. In particular, older Intel iGPUs have a high likelihood of incompatibility. We are also aware of a number of issues on devices with Adreno GPUs and are working to resolve them.
+> A GPU with D3D12, Vulkan, or Metal support is required.
 
-### 1. Dump your game
-
-You must dump your own copy of the game, please see [this article](https://wiki.dolphin-emu.org/index.php?title=Ripping_Games) for instructions. After dumping, you can use a program like [Dolphin](https://dolphin-emu.org/) or [nodtool](https://github.com/encounter/nod/releases) to convert the `.iso` to a `.rvz` to save space.
-
-Currently, only the GameCube USA and EUR releases are supported. Support for other versions of the game is planned in the future.
-
-### 2. Download [Dusklight](https://github.com/TwilitRealm/dusklight/releases)
-
-### 3. Setup the game
-**Windows / macOS / Linux**
-- Extract the .zip file
-- Launch Dusklight
-- Press **Select Disc Image** and provide the path to your supported game dump
-- Press **Play**!
-
-**iOS**
-- Follow the [iOS setup guide](docs/ios-install-altstore.md)
-
-**Android**
-- Install the Dusklight APK
-- Launch Dusklight
-- Press **Select Disc Image** and provide the path to your supported game dump
-- Press **Play**!
+1. Dump your own copy of the game — see [this article](https://wiki.dolphin-emu.org/index.php?title=Ripping_Games) for instructions. `.iso`/`.rvz` and other common formats are supported.
+2. Download a release from [this fork's releases page](https://github.com/AstrandPallas/dusklight/releases).
+3. Extract, launch Dusklight, select your disc image, and press **Play**.
 
 # Building
 
-If you'd like to build Dusklight from source, please read the [build instructions](docs/building.md).
-
-Pull requests are welcomed! Note that we do not accept contributions that are primarily AI-generated and will close your PR if we suspect as much. Please also see the [code conventions](docs/code-conventions.md).
+Identical to upstream — see the [build instructions](docs/building.md). The co-op work lives on the `coop-splitscreen` branch.
 
 # Credits
 
-Special thanks to the [TP decompilation](https://github.com/zeldaret/tp) team, the GC/Wii decompilation community, the [Aurora](https://github.com/encounter/aurora) developers, the [TP speedrunning community](https://zsrtp.link), and all [contributors](https://github.com/TwilitRealm/dusklight/graphs/contributors).
+All credit for Dusklight itself goes to the [TwilitRealm](https://github.com/TwilitRealm/dusklight) team. Special thanks to the [TP decompilation](https://github.com/zeldaret/tp) team, the GC/Wii decompilation community, the [Aurora](https://github.com/encounter/aurora) developers, and the [TP speedrunning community](https://zsrtp.link).
 
 <br/>
 <div align="center">
