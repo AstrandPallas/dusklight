@@ -1443,12 +1443,23 @@ static int phase_4(dScnPly_c* i_this) {
     #endif
 
     dComIfGp_setPlayerInfo(0, NULL, 0);
+#if TARGET_PC
+    for (int i = 1; i < 4; i++) {
+        dComIfGp_setPlayerInfo(i, NULL, 0);
+    }
+#endif
     for (int i = 0; i < 2; i++) {
         dComIfGp_setPlayerPtr(i, NULL);
     }
 
     dComIfGp_setWindow(0, 0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, 0.0f, 1.0f, 0, 2);
     dComIfGp_setCameraInfo(0, NULL, 0, 0, -1);
+#if TARGET_PC
+    for (int i = 1; i < 4; i++) {
+        dComIfGp_setWindow(i, 0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, 0.0f, 1.0f, i, 2);
+        dComIfGp_setCameraInfo(i, NULL, i, i, -1);
+    }
+#endif
     dComIfGd_setWindow(NULL);
     dComIfGd_setViewport(NULL);
     dComIfGd_setView(NULL);

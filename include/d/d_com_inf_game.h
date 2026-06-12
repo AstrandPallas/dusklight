@@ -931,16 +931,32 @@ public:
     /* 0x04E0C */ u8 mWindowNum;
     /* 0x04E0D */ s8 mLayerOld;
     /* 0x04E0E */ u16 mStatus;
+#if TARGET_PC
+    // Co-op: tables sized for up to 4 players (engine pad/camera slots are
+    // natively 4-wide). Offset comments are original GC layout and no longer
+    // match past this point.
+    /* 0x04E10 */ dDlst_window_c mWindow[4];
+    /* 0x04E3C */ dComIfG_camera_info_class mCameraInfo[4];
+    /* 0x04E74 */ struct {
+        /* 0x0 */ fopAc_ac_c* mpPlayer;
+        /* 0x4 */ s8 mCameraID;
+    } mPlayerInfo[4];
+#else
     /* 0x04E10 */ dDlst_window_c mWindow[1];
     /* 0x04E3C */ dComIfG_camera_info_class mCameraInfo[1];
     /* 0x04E74 */ struct {
         /* 0x0 */ fopAc_ac_c* mpPlayer;
         /* 0x4 */ s8 mCameraID;
     } mPlayerInfo[1];
+#endif
     /* 0x04E7C */ fopAc_ac_c* mPlayerPtr[2];  // 0: Player, 1: Horse ; type may be wrong
     /* 0x04E84 */ dComIfG_item_info_class mItemInfo;
     /* 0x04FB0 */ dComIfG_MesgCamInfo_c mMesgCamInfo;
+#if TARGET_PC
+    /* 0x04FE0 */ u32 mPlayerStatus[4][4];
+#else
     /* 0x04FE0 */ u32 mPlayerStatus[1][4];
+#endif
     /* 0x04FF0 */ u8 field_0x4ff0[0x8];
     /* 0x04FF8 */ __d_timer_info_c mTimerInfo;
     /* 0x0500C */ dDlst_window_c* mCurrentWindow;
@@ -1047,7 +1063,9 @@ public:
     #endif
 };  // Size: 0x1DE10
 
+#if !TARGET_PC
 STATIC_ASSERT(122384 == sizeof(dComIfG_inf_c));
+#endif
 
 extern dComIfG_inf_c g_dComIfG_gameInfo;
 extern GXColor g_blackColor;
