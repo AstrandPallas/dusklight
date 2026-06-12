@@ -35,7 +35,7 @@ bool get_ui_tick_pending();
 bool is_sim_frame();
 
 void record_camera(::camera_process_class* cam, int camera_id);
-void interp_view(::view_class* view);
+void interp_view(::view_class* view, int camera_id);
 void record_final_mtx(Mtx m, const void *key);
 void record_final_mtx(Mtx m);
 

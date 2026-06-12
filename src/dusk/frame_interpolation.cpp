@@ -1,5 +1,6 @@
 #include "dusk/frame_interpolation.h"
 
+#include "dusk/coop.h"
 #include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_graphic.h"
 #include "mtx.h"
@@ -40,12 +41,23 @@ struct CameraSnapshot {
     f32 far_{};
     bool wideZoom{};
     bool valid{};
+    uint64_t recorded_seq{};
 };
 
-CameraSnapshot s_cam_prev{};
-CameraSnapshot s_cam_curr{};
+// One snapshot pair per camera id so split co-op windows interpolate
+// independently (engine camera slots are kMaxPlayers-wide, see dComIfG's
+// mCameraInfo[]).
+constexpr int kNumCameraSlots = dusk::coop::kMaxPlayers;
 
-view_class s_presentation_view_backup{};
+CameraSnapshot s_cam_prev[kNumCameraSlots]{};
+CameraSnapshot s_cam_curr[kNumCameraSlots]{};
+
+struct PresentationViewRestore {
+    view_class* view{};
+    view_class backup{};
+};
+
+PresentationViewRestore s_presentation_view_restore[kNumCameraSlots]{};
 int s_presentation_depth = 0;
 
 struct InterpolationCallBackWork {
@@ -54,6 +66,29 @@ struct InterpolationCallBackWork {
 };
 
 std::vector<InterpolationCallBackWork> s_interpolationCallBackWork;
+
+void reset_camera_slots() {
+    for (int i = 0; i < kNumCameraSlots; ++i) {
+        s_cam_prev[i].valid = false;
+        s_cam_curr[i].valid = false;
+    }
+}
+
+// A camera slot may only interpolate when it recorded on the current sim tick
+// AND the tick immediately before it. Cameras that stop recording — destroyed
+// on a scene change, suspended during a coop guest stash, paused, or freshly
+// created without a previous tick — go stale automatically and snap to their
+// sim view instead of blending from dead data. This replaces the old
+// "invalidate when camera 0 is missing" special case.
+bool camera_slot_fresh(int camera_id) {
+    if (camera_id < 0 || camera_id >= kNumCameraSlots) {
+        return false;
+    }
+    const CameraSnapshot& prev = s_cam_prev[camera_id];
+    const CameraSnapshot& curr = s_cam_curr[camera_id];
+    return prev.valid && curr.valid && curr.recorded_seq == g_sim_tick_seq &&
+           prev.recorded_seq + 1 == curr.recorded_seq;
+}
 
 void copy_view_to_snap(CameraSnapshot* dst, const view_class& v) {
     dst->eye = v.lookat.eye;
@@ -135,7 +170,9 @@ void begin_sim_tick() {
     }
 
     s_interpolationCallBackWork.clear();
-    s_cam_prev = std::move(s_cam_curr);
+    for (int i = 0; i < kNumCameraSlots; ++i) {
+        s_cam_prev[i] = s_cam_curr[i];
+    }
     ++g_sim_tick_seq;
 }
 
@@ -166,8 +203,7 @@ void begin_record() {
         g_previous_recording = {};
         g_current_recording = {};
         clear_replacements();
-        s_cam_prev.valid = false;
-        s_cam_curr.valid = false;
+        reset_camera_slots();
         return;
     }
 
@@ -177,13 +213,6 @@ void begin_record() {
     g_recording = true;
     g_interpolating = false;
     clear_replacements();
-
-    ::camera_process_class* cam = dComIfGp_getCamera(0);
-    if (cam == nullptr) {
-        s_cam_prev.valid = false;
-        s_cam_curr.valid = false;
-        return;
-    }
 }
 
 void end_record() {
@@ -281,21 +310,26 @@ bool lookup_concat_replacement(const void* lhs, const void* rhs, Mtx out) {
 }
 
 void record_camera(::camera_process_class* cam, int camera_id) {
-    if (!g_enabled || camera_id != 0 || cam == nullptr) {
+    if (!g_enabled || cam == nullptr || camera_id < 0 || camera_id >= kNumCameraSlots) {
         return;
     }
-    copy_view_to_snap(&s_cam_curr, cam->view);
+    CameraSnapshot& slot = s_cam_curr[camera_id];
+    copy_view_to_snap(&slot, cam->view);
+    slot.recorded_seq = g_sim_tick_seq;
 #if WIDESCREEN_SUPPORT
-    s_cam_curr.wideZoom = mDoGph_gInf_c::isWideZoom();
+    slot.wideZoom = mDoGph_gInf_c::isWideZoom();
 #endif
 }
 
-void interp_view(::view_class* view) {
+void interp_view(::view_class* view, int camera_id) {
     if (!g_enabled)
         return;
 
-    if (!s_cam_prev.valid || !s_cam_curr.valid)
+    if (!camera_slot_fresh(camera_id))
         return;
+
+    const CameraSnapshot& cam_prev = s_cam_prev[camera_id];
+    const CameraSnapshot& cam_curr = s_cam_curr[camera_id];
 
     const f32 step = get_interpolation_step();
     const bool is_cam_curr_authoritative = g_is_sim_frame && step <= 0.0f;
@@ -304,16 +338,16 @@ void interp_view(::view_class* view) {
     cXyz center;
     cXyz up;
     if (is_cam_curr_authoritative) {
-        eye = s_cam_curr.eye;
-        center = s_cam_curr.center;
-        up = s_cam_curr.up;
+        eye = cam_curr.eye;
+        center = cam_curr.center;
+        up = cam_curr.up;
     } else {
-        lerp_xyz(&eye, s_cam_prev.eye, s_cam_curr.eye, step);
-        lerp_xyz(&center, s_cam_prev.center, s_cam_curr.center, step);
-        lerp_xyz(&up, s_cam_prev.up, s_cam_curr.up, step);
+        lerp_xyz(&eye, cam_prev.eye, cam_curr.eye, step);
+        lerp_xyz(&center, cam_prev.center, cam_curr.center, step);
+        lerp_xyz(&up, cam_prev.up, cam_curr.up, step);
     }
     if (!up.normalizeRS()) {
-        up = s_cam_curr.up;
+        up = cam_curr.up;
         up.normalizeRS();
     }
 
@@ -321,25 +355,29 @@ void interp_view(::view_class* view) {
     view->lookat.center = center;
     view->lookat.up = up;
     if (is_cam_curr_authoritative) {
-        view->bank = s_cam_curr.bank;
-        view->fovy = s_cam_curr.fovy;
-        view->aspect = s_cam_curr.aspect;
-        view->near_ = s_cam_curr.near_;
-        view->far_ = s_cam_curr.far_;
+        view->bank = cam_curr.bank;
+        view->fovy = cam_curr.fovy;
+        view->aspect = cam_curr.aspect;
+        view->near_ = cam_curr.near_;
+        view->far_ = cam_curr.far_;
     } else {
-        view->bank = lerp_bank(s_cam_prev.bank, s_cam_curr.bank, step);
-        view->fovy = s_cam_prev.fovy + (s_cam_curr.fovy - s_cam_prev.fovy) * step;
-        view->aspect = s_cam_prev.aspect + (s_cam_curr.aspect - s_cam_prev.aspect) * step;
-        view->near_ = s_cam_prev.near_ + (s_cam_curr.near_ - s_cam_prev.near_) * step;
-        view->far_ = s_cam_prev.far_ + (s_cam_curr.far_ - s_cam_prev.far_) * step;
+        view->bank = lerp_bank(cam_prev.bank, cam_curr.bank, step);
+        view->fovy = cam_prev.fovy + (cam_curr.fovy - cam_prev.fovy) * step;
+        view->aspect = cam_prev.aspect + (cam_curr.aspect - cam_prev.aspect) * step;
+        view->near_ = cam_prev.near_ + (cam_curr.near_ - cam_prev.near_) * step;
+        view->far_ = cam_prev.far_ + (cam_curr.far_ - cam_prev.far_) * step;
     }
 
     // FRAME INTERP TODO: It might be better if I rewired the game to not clear this flag until the
     // next sim frame, but I don't care enough to right now
 #if WIDESCREEN_SUPPORT
-    const f32 wide_step = is_cam_curr_authoritative ? 1.0f : step;
-    if (mDoGph_gInf_c::isWide() && !mDoGph_gInf_c::isWideZoom() && wide_step >= 0.5f ? s_cam_curr.wideZoom : s_cam_prev.wideZoom) {
-        mDoGph_gInf_c::onWideZoom();
+    // The wide-zoom flag is global state owned by the primary view; secondary
+    // (split co-op) cameras never drive it — widezoom is disabled during split.
+    if (camera_id == 0) {
+        const f32 wide_step = is_cam_curr_authoritative ? 1.0f : step;
+        if (mDoGph_gInf_c::isWide() && !mDoGph_gInf_c::isWideZoom() && wide_step >= 0.5f ? cam_curr.wideZoom : cam_prev.wideZoom) {
+            mDoGph_gInf_c::onWideZoom();
+        }
     }
 #endif
 }
@@ -367,7 +405,9 @@ void begin_presentation_camera() {
         s_presentation_depth++;
         return;
     }
-    if (!s_cam_prev.valid || !s_cam_curr.valid) {
+    // Camera 0 drives the global presentation state (audio listener, cull
+    // frustum, j3dSys view); without fresh data for it, skip the pass entirely.
+    if (!camera_slot_fresh(0)) {
         return;
     }
 
@@ -376,8 +416,9 @@ void begin_presentation_camera() {
         return;
     }
 
-    std::memcpy(&s_presentation_view_backup, view, sizeof(view_class));
-    interp_view(view);
+    std::memcpy(&s_presentation_view_restore[0].backup, view, sizeof(view_class));
+    s_presentation_view_restore[0].view = view;
+    interp_view(view, 0);
 
     // FRAME INTERP TODO: Largely copied from d_camera's camera_draw function from this point, got any better ideas?
     C_MTXPerspective(view->projMtx, view->fovy, view->aspect, view->near_, view->far_);
@@ -437,6 +478,39 @@ void begin_presentation_camera() {
 
     // FRAME INTERP NOTE: Removed the call to offWideZoom that was here, it causes problems with presentation during cutscenes.
 
+    // coop: refresh every other live camera the same way, so each split window
+    // presents its own interpolated view — the painter's per-window pass reads
+    // camera_p->view.{viewMtx,projMtx,fovy,aspect,lookat} directly. The
+    // camera-0-pinned globals above (audio listener, cull frustum, j3dSys view)
+    // are intentionally not touched here, mirroring view_setup/camera_draw.
+    for (int id = 1; id < kNumCameraSlots; ++id) {
+        if (!camera_slot_fresh(id)) {
+            continue;
+        }
+        ::camera_process_class* cam = dComIfGp_getCamera(id);
+        if (cam == nullptr) {
+            continue;
+        }
+        view_class* const cam_view = &cam->view;
+        std::memcpy(&s_presentation_view_restore[id].backup, cam_view, sizeof(view_class));
+        s_presentation_view_restore[id].view = cam_view;
+
+        interp_view(cam_view, id);
+        C_MTXPerspective(cam_view->projMtx, cam_view->fovy, cam_view->aspect, cam_view->near_,
+                         cam_view->far_);
+        mDoMtx_lookAt(cam_view->viewMtx, &cam_view->lookat.eye, &cam_view->lookat.center,
+                      &cam_view->lookat.up, cam_view->bank);
+#if WIDESCREEN_SUPPORT
+        mDoGph_gInf_c::setWideZoomProjection(cam_view->projMtx);
+#endif
+        cMtx_inverse(cam_view->viewMtx, cam_view->invViewMtx);
+        MTXCopy(cam_view->viewMtx, cam_view->viewMtxNoTrans);
+        cam_view->viewMtxNoTrans[0][3] = 0.0f;
+        cam_view->viewMtxNoTrans[1][3] = 0.0f;
+        cam_view->viewMtxNoTrans[2][3] = 0.0f;
+        cMtx_concatProjView(cam_view->projMtx, cam_view->viewMtx, cam_view->projViewMtx);
+    }
+
     s_presentation_depth = 1;
 
     run_interpolation_callbacks();
@@ -451,9 +525,12 @@ void end_presentation_camera() {
         return;
     }
 
-    view_class* const view = dComIfGd_getView();
-    if (view != nullptr) {
-        std::memcpy(view, &s_presentation_view_backup, sizeof(view_class));
+    for (PresentationViewRestore& restore : s_presentation_view_restore) {
+        if (restore.view == nullptr) {
+            continue;
+        }
+        std::memcpy(restore.view, &restore.backup, sizeof(view_class));
+        restore.view = nullptr;
     }
 }
 }  // namespace dusk::frame_interp

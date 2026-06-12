@@ -11422,7 +11422,7 @@ static int camera_execute(camera_process_class* i_this) {
     dusk::frame_interp::record_camera(i_this, get_camera_id(i_this));
     // interpolate the view now so that this sim frame's view matrix matches what
     // we'll be rendering with later
-    dusk::frame_interp::interp_view(&i_this->view);
+    dusk::frame_interp::interp_view(&i_this->view, get_camera_id(i_this));
 #endif
 
     view_setup(i_this);
