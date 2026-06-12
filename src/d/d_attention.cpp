@@ -652,6 +652,15 @@ int dAttention_c::SelectAttention(fopAc_ac_c* i_actor) {
         return 0;
     }
 
+#if TARGET_PC
+    // coop: players are never lock-on/action candidates for each other — the
+    // owner check above only excludes THIS instance's player, but P1
+    // (attention_info.flags == -1) would otherwise land in a guest's lists
+    if (fopAcM_GetName(i_actor) == fpcNm_ALINK_e) {
+        return 0;
+    }
+#endif
+
     mPlayerAttentionFlags = mpPlayer->attention_info.flags;
 
     cSGlobe globe(i_actor->attention_info.position - mOwnerAttnPos);
@@ -886,6 +895,14 @@ void dAttention_c::runSoundProc() {
 void dAttention_c::runDrawProc() {
     int lockon_cnt = GetLockonCount();
 
+#if TARGET_PC
+    // coop: consult the bound player's status words (pad n == player n);
+    // identical to the hardcoded 0 for the P1 instance
+    int player_no = (int)mPadNo;
+#else
+    int player_no = 0;
+#endif
+
     if (chkFlag(8)) {
         draw[0].setAlphaAnm(mAttParam.mAttnCursorAppearFrames, 0);
         draw[0].setAnm(DRAW_TYPE_RED, mAttParam.field_0x3c);
@@ -894,8 +911,8 @@ void dAttention_c::runDrawProc() {
         draw[0].mCursorOffsetY = mAttParam.mAttnCursorOffsetY;
         draw[0].field_0x175 = 1;
 
-        if (!dComIfGp_checkPlayerStatus0(0, 0x36a02311) ||
-            dComIfGp_checkPlayerStatus1(0, 0x11)) {
+        if (!dComIfGp_checkPlayerStatus0(player_no, 0x36a02311) ||
+            dComIfGp_checkPlayerStatus1(player_no, 0x11)) {
             lockSoundStart(Z2SE_SY_L_FOCUS_SET);
         }
     } else if (chkFlag(0x10)) {
@@ -905,8 +922,8 @@ void dAttention_c::runDrawProc() {
             setFlag(0x40000000);
         }
 
-        if (!dComIfGp_checkPlayerStatus0(0, 0x36a02311) ||
-            dComIfGp_checkPlayerStatus1(0, 0x11)) {
+        if (!dComIfGp_checkPlayerStatus0(player_no, 0x36a02311) ||
+            dComIfGp_checkPlayerStatus1(player_no, 0x11)) {
             lockSoundStart(Z2SE_SY_L_FOCUS_RESET);
         }
     } else if (chkFlag(0x1)) {
@@ -1044,7 +1061,15 @@ void dAttention_c::checkButton() {
         }
     }
 
-    if (dComIfGp_checkPlayerStatus0(0, 0x36a02311) || dComIfGp_checkPlayerStatus1(0, 0x11)) {
+#if TARGET_PC
+    // coop: consult the bound player's status words (pad n == player n);
+    // identical to the hardcoded 0 for the P1 instance
+    int player_no = (int)mPadNo;
+#else
+    int player_no = 0;
+#endif
+    if (dComIfGp_checkPlayerStatus0(player_no, 0x36a02311) ||
+        dComIfGp_checkPlayerStatus1(player_no, 0x11)) {
         switch (field_0x32b) {
         case 0:
         case 1:
@@ -1622,7 +1647,15 @@ void dAttDraw_c::draw(cXyz& i_pos, Mtx i_mtx) {
 }
 
 fopAc_ac_c* dAttention_c::LockonTarget(s32 i_no) {
-    if (dComIfGp_checkPlayerStatus0(0, 0x36A02311) || dComIfGp_checkPlayerStatus1(0, 0x11)) {
+#if TARGET_PC
+    // coop: gate on the bound player's status words (pad n == player n);
+    // identical to the hardcoded 0 for the P1 instance
+    int player_no = (int)mPadNo;
+#else
+    int player_no = 0;
+#endif
+    if (dComIfGp_checkPlayerStatus0(player_no, 0x36A02311) ||
+        dComIfGp_checkPlayerStatus1(player_no, 0x11)) {
         return NULL;
     }
 
@@ -1661,7 +1694,15 @@ f32 dAttention_c::LockonReleaseDistanse() {
 }
 
 fpc_ProcID dAttention_c::LockonTargetPId(s32 i_no) {
-    if (dComIfGp_checkPlayerStatus0(0, 0x36A02311) || dComIfGp_checkPlayerStatus1(0, 0x11)) {
+#if TARGET_PC
+    // coop: gate on the bound player's status words (pad n == player n);
+    // identical to the hardcoded 0 for the P1 instance
+    int player_no = (int)mPadNo;
+#else
+    int player_no = 0;
+#endif
+    if (dComIfGp_checkPlayerStatus0(player_no, 0x36A02311) ||
+        dComIfGp_checkPlayerStatus1(player_no, 0x11)) {
         return fpcM_ERROR_PROCESS_ID_e;
     }
 

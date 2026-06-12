@@ -5020,7 +5020,15 @@ int daAlink_c::create() {
             return cPhs_ERROR_e;
         }
 
+#if TARGET_PC
+        // coop: bind this player's own attention instance. Guests' instances
+        // are created by the coop manager at join request — before this
+        // create phase runs — so the fallback to slot 0 only triggers if that
+        // allocation failed (P2 would then share P1's lock-on, never crash).
+        mAttention = dComIfGp_getAttention(mPlayerNo);
+#else
         mAttention = dComIfGp_getAttention();
+#endif
 #if TARGET_PC
         // coop: read this player's slot. A guest's own camera may still be
         // initializing for a few frames — sites that deref the camera pointer

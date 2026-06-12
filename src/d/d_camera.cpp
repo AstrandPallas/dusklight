@@ -60,7 +60,20 @@ inline static bool is_player(fopAc_ac_c* actor) {
 
 static void hideActor(fopAc_ac_c* actor) {
     if (is_player(actor)) {
+#if TARGET_PC
+        // coop: hide-flag the camera slot of THIS player — each Link reads the
+        // bit back through its own camera id (field_0x317c)
+        int cam_idx = 0;
+        for (int i = 0; i < dusk::coop::kMaxPlayers; i++) {
+            if (actor == (fopAc_ac_c*)dComIfGp_getPlayer(i)) {
+                cam_idx = dComIfGp_getPlayerCameraID(i);
+                break;
+            }
+        }
+        dComIfGp_onCameraAttentionStatus(cam_idx, 2);
+#else
         dComIfGp_onCameraAttentionStatus(0, 2);
+#endif
         daPy_py_c* player = (daPy_py_c*)actor;
         if (player->checkHorseRide()) {
             daHorse_c* horse = dComIfGp_getHorseActor();
@@ -353,6 +366,60 @@ inline static void setComZoomForcus(f32 param_0) {
 }
 
 }  // namespace
+
+// coop: per-camera routing for state the vanilla game kept in slot 0. These
+// members shadow the file-static helpers above inside dCamera_c methods (the
+// statics remain for the few free-function call sites, which route by
+// camera_id explicitly). mPadID is the bound player's number (see
+// get_controller_id); mCameraID is this camera's cameraInfo slot — both 0 for
+// camera 0, so solo behavior is bit-identical.
+dAttention_c* dCamera_c::attention() {
+#if TARGET_PC
+    return dComIfGp_getAttention((int)mPadID);
+#else
+    return dComIfGp_getAttention();
+#endif
+}
+
+void dCamera_c::setComStat(u32 i_flag) {
+#if TARGET_PC
+    dComIfGp_onCameraAttentionStatus(mCameraID, i_flag);
+#else
+    dComIfGp_onCameraAttentionStatus(0, i_flag);
+#endif
+}
+
+BOOL dCamera_c::getComStat(u32 i_flag) {
+#if TARGET_PC
+    return dComIfGp_getCameraAttentionStatus(mCameraID) & i_flag;
+#else
+    return dComIfGp_getCameraAttentionStatus(0) & i_flag;
+#endif
+}
+
+void dCamera_c::clrComStat(u32 i_flag) {
+#if TARGET_PC
+    dComIfGp_offCameraAttentionStatus(mCameraID, i_flag);
+#else
+    dComIfGp_offCameraAttentionStatus(0, i_flag);
+#endif
+}
+
+void dCamera_c::setComZoomScale(f32 i_scale) {
+#if TARGET_PC
+    dComIfGp_setCameraZoomScale(mCameraID, i_scale);
+#else
+    dComIfGp_setCameraZoomScale(0, i_scale);
+#endif
+}
+
+void dCamera_c::setComZoomForcus(f32 i_focus) {
+#if TARGET_PC
+    dComIfGp_setCameraZoomForcus(mCameraID, i_focus);
+#else
+    dComIfGp_setCameraZoomForcus(0, i_focus);
+#endif
+}
 
 void dCamera_c::initialize(camera_class* i_camera, fopAc_ac_c* i_player, u32 i_cameraID,
                            u32 i_padID) {
@@ -741,7 +808,7 @@ void dCamera_c::initPad() {
 }
 
 void dCamera_c::updatePad() {
-    dAttention_c* attn = dComIfGp_getAttention();
+    dAttention_c* attn = attention();
     int var_r30 = mCamParam.Algorythmn(mCamStyle);
 
     f32 var_f31;
@@ -989,7 +1056,7 @@ bool dCamera_c::checkForceLockTarget() {
     if (mLockOnActorID != -1) {
         mpLockOnActor = GetForceLockOnActor();
         if (mpLockOnActor != NULL) {
-            if (dComIfGp_getAttention()->Lockon() || mForceLockTimer > mCamSetup.ForceLockOffTimer()
+            if (attention()->Lockon() || mForceLockTimer > mCamSetup.ForceLockOffTimer()
                 || cXyz(positionOf(mpLockOnActor) - positionOf(mpPlayerActor)).abs() > mCamSetup.ForceLockOffDist())
             {
                 ret = false;
@@ -1706,7 +1773,7 @@ void dCamera_c::setRoomMapToolData(dCamMapToolData* i_toolData, s32 param_1, s32
 }
 
 s32 dCamera_c::nextMode(s32 i_curMode) {
-    dAttention_c* attn = dComIfGp_getAttention();
+    dAttention_c* attn = attention();
     s32 next_mode = i_curMode;
     cXyz player_pos = positionOf(mpPlayerActor);
     daAlink_c* link = daAlink_getAlinkActorClass();
@@ -1749,7 +1816,7 @@ s32 dCamera_c::nextMode(s32 i_curMode) {
                 next_mode = 0;
             }
         } else if (link->checkGoatThrow() && dComIfGoat_GetThrow() != NULL) {
-            dComIfGp_getAttention()->LockSoundOff();
+            attention()->LockSoundOff();
             mpLockonTarget = dComIfGoat_GetThrow();
             if (fopAcM_GetName(mpLockonTarget) == fpcNm_E_GOB_e) {
                 if (link->checkGoatThrowAfter()) {
@@ -1763,7 +1830,7 @@ s32 dCamera_c::nextMode(s32 i_curMode) {
                 next_mode = 2;
             }
         } else if (link->checkGoronSideMove() || link->getSumouCameraMode()) {
-            dComIfGp_getAttention()->LockSoundOff();
+            attention()->LockSoundOff();
             next_mode = 1;
         } else if (link->checkFastShotTime()) {
             mFastShotState = 1;
@@ -1834,7 +1901,7 @@ s32 dCamera_c::nextMode(s32 i_curMode) {
 
     switch (next_mode) {
     case 4:
-        dComIfGp_getAttention()->LockSoundOff();
+        attention()->LockSoundOff();
         break;
     }
 
@@ -1842,7 +1909,7 @@ s32 dCamera_c::nextMode(s32 i_curMode) {
 }
 
 bool dCamera_c::onModeChange(s32 i_curMode, s32 i_nextMode) {
-    dAttention_c* unusedAttn = dComIfGp_getAttention();
+    dAttention_c* unusedAttn = attention();
     field_0x160 = 0;
     field_0x164 = 0;
     field_0x168 = 1;
@@ -1942,7 +2009,7 @@ s32 dCamera_c::nextType(s32 i_curType) {
             }
 
             if (check_owner_action(mPadID, 0x200000) && ChangeModeOK(4)
-                                                     && !dComIfGp_getAttention()->Lockon()) {
+                                                     && !attention()->Lockon()) {
                 next_type = specialType[CAM_TYPE_SCOPE];
                 var_r28 = 0x6f;
             } else if (iVar14 != 0xff && !(mTagCamTool.mFlags & 0x10)) {
@@ -2057,7 +2124,7 @@ s32 dCamera_c::nextType(s32 i_curType) {
     }
 
     if (!ChangeModeOK(2)) {
-        dComIfGp_getAttention()->LockSoundOff();
+        attention()->LockSoundOff();
     }
 
     if (dComIfGp_evmng_cameraPlay() || chkFlag(0x20000000)) {
@@ -2065,12 +2132,12 @@ s32 dCamera_c::nextType(s32 i_curType) {
             mEventData.field_0xc = next_type;
         }
         next_type = specialType[CAM_TYPE_EVENT];
-        dComIfGp_getAttention()->LockSoundOff();
+        attention()->LockSoundOff();
     } else {
         clrFlag(0x40000000);
         if (dComIfGp_getEvent()->runCheck()) {
             setComStat(4);
-            dComIfGp_getAttention()->LockSoundOff();
+            attention()->LockSoundOff();
         }
 
 #if DEBUG
@@ -2234,13 +2301,13 @@ fopAc_ac_c* dCamera_c::getParamTargetActor(s32 param_0) {
     //name += 16;
     switch ((u32)*name) {
     case '@LOC':
-        result = dComIfGp_getAttention()->LockonTarget(0);
+        result = attention()->LockonTarget(0);
         break;
     case '@ACT':
-        result = dComIfGp_getAttention()->ActionTarget(0);
+        result = attention()->ActionTarget(0);
         break;
     case '@CHK':
-        result = dComIfGp_getAttention()->CheckObjectTarget(0);
+        result = attention()->CheckObjectTarget(0);
         break;
     case '@CPY':
         result = player->getCopyRodCameraActor();
@@ -3550,8 +3617,8 @@ bool dCamera_c::chaseCamera(s32 param_0) {
     daAlink_c* player = (daAlink_c*)mpPlayerActor;
     daMidna_c* midna = daPy_py_c::getMidnaActor();
 
-    if (dComIfGp_getAttention()->GetCheckObjectCount() != 0) {
-        mpAuxTargetActor1 = dComIfGp_getAttention()->CheckObjectTarget(0);
+    if (attention()->GetCheckObjectCount() != 0) {
+        mpAuxTargetActor1 = attention()->CheckObjectTarget(0);
         setFlag(2);
     }
 
@@ -3852,7 +3919,7 @@ bool dCamera_c::chaseCamera(s32 param_0) {
         }
     }
 
-    dAttention_c* attention = dComIfGp_getAttention();
+    dAttention_c* attention = this->attention();
 
     if (mGear == 1 && !mCamParam.Flag(param_0, 0x20)) {
         mForwardTiltOffset = cSAngle::_0;
@@ -4243,7 +4310,7 @@ bool dCamera_c::chaseCamera(s32 param_0) {
 
     if (player->checkThrowDamage()) {
         chase->field_0x91 = true;
-        fopAc_ac_c* target = dComIfGp_getAttention()->LockonTarget(0);
+        fopAc_ac_c* target = attention->LockonTarget(0);
         if (target != NULL && fopAcM_GetName(target) == fpcNm_E_HZ_e) {
             setFlag(0x2000);
             mpAuxTargetActor1 = target;
@@ -4699,7 +4766,7 @@ bool dCamera_c::lockonCamera(s32 param_0) {
 
     LockOnData* lockon = (LockOnData*)mWork;
 
-    dAttention_c* attention = dComIfGp_getAttention();
+    dAttention_c* attention = this->attention();
     daAlink_c* player = (daAlink_c*)mpPlayerActor;
 
     if (dComIfGp_evmng_cameraPlay()) {
@@ -4773,9 +4840,9 @@ bool dCamera_c::lockonCamera(s32 param_0) {
     if (player->checkCutHeadProc() && lockon->field_0x3c != fpcM_ERROR_PROCESS_ID_e) {
         mpLockonTarget = fopAcM_SearchByID(lockon->field_0x3c);
         if (mpLockonTarget != NULL) {
-            dComIfGp_getAttention()->keepLock(30);
+            attention->keepLock(30);
         } else {
-            dComIfGp_getAttention()->keepLock(0);
+            attention->keepLock(0);
         }
     }
 
@@ -4859,7 +4926,7 @@ bool dCamera_c::lockonCamera(s32 param_0) {
         bVar1 = true;
     }
 
-    if (dComIfGp_getAttention()->LockEdge()) {
+    if (attention->LockEdge()) {
         field_0x160 = mCurCamStyleTimer = 0;
         lockon->field_0x2a = false;
     }
@@ -7686,7 +7753,12 @@ bool dCamera_c::freeCamera() {
     f32 pitch_rad = 0.0f;
     dusk::mouse::getCameraDeltas(yaw_rad, pitch_rad);
     if (dusk::getSettings().game.enableMouseCamera && (yaw_rad != 0.0f || pitch_rad != 0.0f) &&
+#if TARGET_PC
+        // coop: consult THIS camera's lock-on bit, not always player 0's
+        !dComIfGp_checkCameraAttentionStatus(mCameraID, 0x8))
+#else
         !dComIfGp_checkCameraAttentionStatus(dComIfGp_getPlayerCameraID(0), 0x8))
+#endif
     {
         mCamParam.mManualMode = 1;
         mCamParam.freeXAngle += MTXRadToDeg(yaw_rad);
@@ -7758,7 +7830,7 @@ bool dCamera_c::towerCamera(s32 param_0) {
     TowerData* tower = (TowerData*)mWork;
 
     daAlink_c* player = (daAlink_c*)mpPlayerActor;
-    dAttention_c* sp1B4 = dComIfGp_getAttention();
+    dAttention_c* sp1B4 = attention();
 
     if (mCurCamStyleTimer == 0) {
         tower->field_0x54.x = mRoomMapTool.mArrowData.posX;
@@ -8835,7 +8907,7 @@ bool dCamera_c::rideCamera(s32 param_0) {
     int sp1E4 = 20;
     f32 var_f31 = 1.0f;
     daAlink_c* player = (daAlink_c*)daAlink_getAlinkActorClass();
-    dAttention_c* attn = dComIfGp_getAttention();
+    dAttention_c* attn = attention();
 
     if (mCurCamStyleTimer == 0) {
         if (mRecovery.field_0x8.field_0x1e <= 0) {
@@ -9538,7 +9610,7 @@ bool dCamera_c::manualCamera(s32 param_0) {
 
     ManualData* manual = (ManualData*)mWork;
 
-    bool sp09 = dComIfGp_getAttention()->LockonTruth() != 0;
+    bool sp09 = attention()->LockonTruth() != 0;
     if (mCurCamStyleTimer == 0) {
         manual->field_0x00 = 'MAN_';
         mStyleSettle.mFinished = true;
@@ -9732,7 +9804,7 @@ bool dCamera_c::manualCamera(s32 param_0) {
 
     int sp2C = manual->field_0x40;
     if (mPadInfo.mMainStick.mLastValue > 0.01f ||
-        dComIfGp_getAttention()->LockonTruth() ||
+        attention()->LockonTruth() ||
         check_owner_action(mPadID, 0x100000)) {
         sp2C = 0;
     } else {
@@ -11149,7 +11221,13 @@ static void view_setup(camera_process_class* i_this) {
 
     f32 far_;
     f32 var_f30;
+#if TARGET_PC
+    // coop: read this camera's own status slot (free function — the dCamera_c
+    // member shadow doesn't apply here)
+    if (dComIfGp_getCameraAttentionStatus(get_camera_id(a_this)) & 8) {
+#else
     if (getComStat(8)) {
+#endif
         far_ = view->far_;
     } else {
 #if DEBUG
@@ -11383,7 +11461,12 @@ static int camera_execute(camera_process_class* i_this) {
         i_this->mCamera.ResetView();
     }
 
+#if TARGET_PC
+    // coop: clear this camera's own slot, not always camera 0's
+    dComIfGp_offCameraAttentionStatus(get_camera_id((camera_class*)i_this), 0x40);
+#else
     dComIfGp_offCameraAttentionStatus(0, 0x40);
+#endif
 
     if (i_this->mCamera.Active()) {
         i_this->mCamera.Run();
@@ -11669,13 +11752,20 @@ static int init_phase2(camera_class* i_this) {
     }
     i_this->field_0x238 = 0;
 #if TARGET_PC
-    // coop: the attention/Z-target system is shared — camera 1 finishing its
-    // init must not re-bind it to the guest player
-    if (camera_id == 0)
-#endif
+    // coop: per-player attention — bind this camera's instance to its player
+    // and pad (camera n == player n == pad n). If the guest's instance failed
+    // to allocate, the accessor falls back to slot 0 — detect that and skip,
+    // so a guest camera can never re-bind P1's attention (the hazard the old
+    // camera-0-only gate protected against).
     {
-        dComIfGp_getAttention()->Init(player, PAD_1);
+        dAttention_c* attn = dComIfGp_getAttention(camera_id);
+        if (camera_id == 0 || attn != dComIfGp_getAttention()) {
+            attn->Init(player, PAD_1 + camera_id);
+        }
     }
+#else
+    dComIfGp_getAttention()->Init(player, PAD_1);
+#endif
     return cPhs_NEXT_e;
 }
 

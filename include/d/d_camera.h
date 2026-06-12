@@ -13,6 +13,11 @@
 #include "m_Do/m_Do_graphic.h"
 
 dAttention_c* dComIfGp_getAttention();
+#if TARGET_PC
+// coop: per-player attention slot (0 = embedded P1 instance, 1+ = coop
+// manager-owned guest instances). Defined in coop_manager.cpp.
+dAttention_c* dComIfGp_getAttention(int i_playerNo);
+#endif
 
 struct dCamMapToolData {
     dCamMapToolData() { Clr(); }
@@ -1090,6 +1095,20 @@ public:
 
     int CameraID() { return mCameraID; }
 
+    // coop: route state the vanilla game kept in slot 0 to THIS camera's
+    // slots — the attention instance of the bound player (mPadID doubles as
+    // the player number, see get_controller_id) and the camera-status/zoom
+    // words the player actor reads back through its own camera id
+    // (field_0x317c). These members shadow the file-static helpers of the
+    // same name in d_camera.cpp, so member call sites need no changes; both
+    // reduce to slot 0 for camera 0 / solo. Defined in d_camera.cpp.
+    dAttention_c* attention();
+    void setComStat(u32 i_flag);
+    BOOL getComStat(u32 i_flag);
+    void clrComStat(u32 i_flag);
+    void setComZoomScale(f32 i_scale);
+    void setComZoomForcus(f32 i_focus);
+
     bool Active() { return mCurState == 0; }
     f32 TrimHeight() { return mTrimHeight; }
     int Type() { return mCurType; }
@@ -1119,7 +1138,7 @@ public:
     }
 
     void Att() {
-        dAttention_c* attn = dComIfGp_getAttention();
+        dAttention_c* attn = attention();
         mpLockonTarget = attn->LockonTruth() ? attn->LockonTarget(0) : NULL;
         attn->LockSoundOn();
     }

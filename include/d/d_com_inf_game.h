@@ -2897,6 +2897,15 @@ inline dAttention_c* dComIfGp_getAttention() {
     return g_dComIfG_gameInfo.play.getAttention();
 }
 
+#if TARGET_PC
+// coop: per-player attention. Slot 0 is the embedded instance above; guest
+// slots are owned by the coop manager (created at join request, reaped after
+// leave). Falls back to slot 0 while a guest slot is absent so reads are
+// always safe — writers that must not touch P1's instance (camera Init)
+// detect the fallback explicitly. Defined in coop_manager.cpp.
+dAttention_c* dComIfGp_getAttention(int i_playerNo);
+#endif
+
 inline fopAc_ac_c* dComIfGp_att_getZHint() {
     return dComIfGp_getAttention()->getZHintTarget();
 }

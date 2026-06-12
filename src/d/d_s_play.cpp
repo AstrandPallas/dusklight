@@ -41,6 +41,7 @@
 
 #if TARGET_PC
 #include "dusk/autosave.h"
+#include "dusk/coop/coop_manager.hpp"
 #include "dusk/memory.h"
 #include "dusk/ui/ui.hpp"
 #endif
@@ -681,6 +682,11 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
 
         dAttention_c* attention = dComIfGp_getAttention();
         attention->Draw();
+#if TARGET_PC
+        // coop: guests' lock-on reticles are world-space markers — drawn once
+        // here, the per-window replay shows them in both views (same as P1's)
+        dusk::coop::drawGuestAttention();
+#endif
     }
 
     #if DEBUG
@@ -817,6 +823,10 @@ static int dScnPly_Execute(dScnPly_c* i_this) {
 
         dComIfGp_getEvent()->Step();
         dComIfGp_getAttention()->Run();
+#if TARGET_PC
+        // coop: guests' attention instances tick right after P1's
+        dusk::coop::runGuestAttention();
+#endif
     }
 
     #if DEBUG

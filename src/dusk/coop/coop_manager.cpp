@@ -3,6 +3,7 @@
 #include "SSystem/SComponent/c_malloc.h"
 #include "dusk/coop_game.h"
 #include "d/actor/d_a_player.h"
+#include "d/d_attention.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_demo.h"
 #include "dusk/logging.h"
@@ -45,6 +46,18 @@ static constexpr f32 kGuestSpawnOffsetX = 100.0f;
 // quit-to-title and auto-spawn P2 into the next loaded save.
 static constexpr int kRejoinTimeoutFrames = 1800;
 static int s_rejoinWaitFrames = 0;
+
+// Per-player Z-targeting: slot [n] is player n+1's dAttention_c (P1's lives
+// embedded in dComIfG_play_c). Created at join REQUEST time — before the
+// guest actor's create phase caches dComIfGp_getAttention(mPlayerNo) and
+// before camera n's init_phase2 binds it. The instance is NOT freed at
+// despawn: the guest actor (and its cached mAttention) can outlive the
+// despawn call by a frame while the fpc delete request drains, so the
+// instance is reaped only once the actor is fully gone (s_attnReapID holds
+// the actor that must die first). A rejoin before the reap fires simply
+// reuses the live instance and cancels the reap.
+static dAttention_c* s_attention[kMaxPlayers - 1];
+static unsigned int s_attnReapID[kMaxPlayers - 1] = {kNoProcID, kNoProcID, kNoProcID};
 
 // Hide+freeze bit for stashed guests. f_op_actor.cpp skips BOTH execute and
 // draw while this status is set, unconditionally — the usual
@@ -206,6 +219,85 @@ static void snapGuestToP1(fopAc_ac_c* guest, int playerNo) {
     guest->speedF = 0.0f;
 }
 
+// Creates (or revives) player playerNo's attention instance. Storage comes
+// from cMl (persistent), the instance's own 0x9000 solid heap from the game
+// heap — same lifetime class as the camera prm append. On alloc failure the
+// slot stays NULL and every reader falls back to P1's instance (the pre-
+// per-player behavior); the camera-side Init guards against that fallback.
+static void createAttention(int playerNo) {
+    s_attnReapID[playerNo - 1] = kNoProcID;  // rejoin reuses a live instance
+    if (s_attention[playerNo - 1] != NULL) return;
+    void* mem = cMl::memalignB(-4, sizeof(dAttention_c));
+    if (mem == NULL) {
+        DuskLog.info("coop: P{} attention alloc failed, sharing P1 lock-on", playerNo + 1);
+        return;
+    }
+    // the guest actor doesn't exist yet — runGuestAttention() and camera
+    // init_phase2 bind the real player pointer before the first Run()
+    s_attention[playerNo - 1] =
+        JKR_NEW_ARGS (mem) dAttention_c((fopAc_ac_c*)NULL, PAD_1 + playerNo);
+}
+
+// Arms the deferred reap: the instance is destroyed once actorID (the guest
+// that may still hold a cached mAttention pointer) no longer exists.
+static void scheduleAttnReap(int playerNo, unsigned int actorID) {
+    if (s_attention[playerNo - 1] != NULL) {
+        s_attnReapID[playerNo - 1] = actorID;
+    }
+}
+
+// Runs at the top of every tick, in every state — a quit-to-title can leave
+// an armed reap behind that must still fire on the menu scenes.
+static void reapAttention() {
+    for (int i = 0; i < kMaxPlayers - 1; i++) {
+        if (s_attnReapID[i] == kNoProcID) continue;
+        fopAc_ac_c* actor = NULL;
+        if (fopAcM_SearchByID(s_attnReapID[i], &actor) != 0) continue;  // still dying
+        if (s_attention[i] != NULL) {
+            s_attention[i]->~dAttention_c();
+            cMl::free(s_attention[i]);
+            s_attention[i] = NULL;
+        }
+        s_attnReapID[i] = kNoProcID;
+        DuskLog.info("coop: P{} attention reaped", i + 2);
+    }
+}
+
+dAttention_c* getAttention(int playerNo) {
+    if (playerNo < 1 || playerNo >= kMaxPlayers) return NULL;
+    return s_attention[playerNo - 1];
+}
+
+void runGuestAttention() {
+    if (s_state != State::Active) return;
+    for (int i = 1; i < kMaxPlayers; i++) {
+        dAttention_c* attn = s_attention[i - 1];
+        if (attn == NULL) continue;
+        fopAc_ac_c* guest = getGuestActor(i);
+        if (guest == NULL) continue;  // despawned or still mid-create
+        // belt-and-suspenders for the Active->Stashed transition frame — a
+        // suspended guest takes no input, so its lock-on must not advance
+        if (fopAcM_CheckStatus(guest, kSuspendStatus)) continue;
+        // re-assert the binding every frame: camera init_phase2 also binds,
+        // but a rejoin reuses this instance through a camera that may have
+        // been adopted without re-running its bind, and mpPlayer must never
+        // be left pointing at a freed actor
+        attn->Init(guest, PAD_1 + i);
+        attn->Run();
+    }
+}
+
+void drawGuestAttention() {
+    if (s_state != State::Active) return;
+    for (int i = 1; i < kMaxPlayers; i++) {
+        dAttention_c* attn = s_attention[i - 1];
+        if (attn == NULL) continue;
+        fopAc_ac_c* guest = getGuestActor(i);
+        if (guest == NULL || fopAcM_CheckStatus(guest, kSuspendStatus)) continue;
+        attn->Draw();
+    }
+}
+
 static void spawnGuest(int playerNo) {
     if (shouldStash()) {
         // no joining during cutscenes/menus/rides — also closes the deferred
@@ -239,6 +331,10 @@ static void spawnGuest(int playerNo) {
         s_wantRejoin = false;
         s_rejoinWaitFrames = 0;
 
+        // per-player Z-targeting — must exist before the guest's create phase
+        // caches it and before camera init_phase2 binds it
+        createAttention(playerNo);
+
         // window 0 = top / camera 0 / P1; window 1 = bottom / camera 1 / P2.
         // windowNum stays 1 until camera 1's init_phase2 raises it (the camera
         // waits for the guest to register into playerInfo[1] first).
@@ -268,6 +364,9 @@ static void despawnGuest(int playerNo) {
     // auto-rejoin
     s_wantRejoin = false;
     if (s_guestActorID[playerNo - 1] != kNoProcID) {
+        // free the attention instance only once the actor (whose cached
+        // mAttention points at it) is truly gone
+        scheduleAttnReap(playerNo, s_guestActorID[playerNo - 1]);
         fopAcM_delete(s_guestActorID[playerNo - 1]);
         s_guestActorID[playerNo - 1] = kNoProcID;
         s_guestProcID[playerNo - 1] = kNoProcID;
@@ -284,6 +383,7 @@ static void despawnGuest(int playerNo) {
 }
 
 void tick() {
+    reapAttention();
     if (!getSettings().game.coopEnabled) {
         // restore before despawning: despawnGuest drops s_state to Solo, which
         // would skip the Active check
@@ -323,6 +423,7 @@ void tick() {
     // dying) with the scene — teardownCamera deletes it if somehow still alive
     // and clears the stale l_fopCamM_id slot either way.
     if ((s_state == State::Active || s_state == State::Stashed) && isGuestGone(1)) {
+        scheduleAttnReap(1, s_guestActorID[0]);  // actor already gone -> fires next tick
         s_guestActorID[0] = kNoProcID;
         s_guestProcID[0] = kNoProcID;
         teardownCamera(1);
@@ -421,3 +522,17 @@ void tick() {
 }
 
 }  // namespace dusk::coop
+
+// Per-player attention accessor declared in d_com_inf_game.h / d_camera.h.
+// playerNo 0 (and any slot without an instance) resolves to the embedded P1
+// instance, so existing no-arg call sites and per-player reads share one
+// fallback-safe funnel.
+dAttention_c* dComIfGp_getAttention(int i_playerNo) {
+    if (i_playerNo > 0) {
+        dAttention_c* attn = dusk::coop::getAttention(i_playerNo);
+        if (attn != NULL) {
+            return attn;
+        }
+    }
+    return dComIfGp_getAttention();
+}
