@@ -11307,7 +11307,10 @@ f32 get_target_trim_height(camera_process_class* i_this) {
 
 void widezoom_correction(camera_process_class* i_this, float trim_height) {
 #if TARGET_PC
-    // coop: window rects are owned by the split layout; cameras must not stomp them
+    // coop: window rects are owned by the split layout; cameras must not stomp
+    // them. The widescreen fovy correction is also skipped intentionally — its
+    // math assumes a full-screen aspect ratio, and running it with the split's
+    // doubled per-view aspect would distort the FOV.
     if (dusk::coop::isSplitActive()) {
         return;
     }

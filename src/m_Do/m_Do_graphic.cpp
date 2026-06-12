@@ -2260,11 +2260,23 @@ int mDoGph_Painter() {
     fapGm_HIO_c::stopCpuTimer("画面キャプチャー用２Ｄ描画まで（レンダリング）");
     #endif
 
+#if TARGET_PC
+    const bool coopSplit = dusk::coop::isSplitActive();
+#else
+    const bool coopSplit = false;
+#endif
+
+#if TARGET_PC
     // coop: run the whole 3D pipeline once per window (split-screen renders the
     // scene N times; the 2D/HUD pass after this loop still runs once, full-screen).
     if (dComIfGp_getWindowNum() != 0)
     for (int wnd = 0; wnd < dComIfGp_getWindowNum(); wnd++) {
         dDlst_window_c* window_p = dComIfGp_getWindow(wnd);
+#else
+    if (dComIfGp_getWindowNum() != 0) {
+        const int wnd = 0;
+        dDlst_window_c* window_p = dComIfGp_getWindow(wnd);
+#endif
         int camera_id = window_p->getCameraID();
         camera_process_class* camera_p = dComIfGp_getCamera(camera_id);
 
@@ -2286,7 +2298,7 @@ int mDoGph_Painter() {
 
             // coop: while split is active, offset viewports are intentional
             // (each window owns part of the FB) — don't normalize to full-screen.
-            if (!dusk::coop::isSplitActive() &&
+            if (!coopSplit &&
                 (view_port->x_orig != 0.0f || view_port->y_orig != 0.0f)) {
                 view_port_class new_port;
                 new_port.x_orig = 0.0f;
@@ -2480,7 +2492,7 @@ int mDoGph_Painter() {
                 #endif
 
                 // coop: full-FB capture/composite pass — window 0 only while split
-                if (!dusk::coop::isSplitActive() || wnd == 0) {
+                if (!coopSplit || wnd == 0) {
                     GX_DEBUG_GROUP(motionBlure, &camera_p->view);
                 }
 
@@ -2492,7 +2504,7 @@ int mDoGph_Painter() {
                 #endif
 
                 // coop: full-FB capture/composite pass — window 0 only while split
-                if (!dusk::coop::isSplitActive() || wnd == 0) {
+                if (!coopSplit || wnd == 0) {
                     GX_DEBUG_GROUP(drawDepth2, &camera_p->view, view_port, dComIfGp_getCameraZoomForcus(camera_id));
                 }
                 GXInvalidateTexAll();
@@ -2617,9 +2629,13 @@ int mDoGph_Painter() {
                                        dComIfGp_getCameraZoomForcus(camera_id));
                 }
 
+#if TARGET_PC
                 // coop: keep the 2D-screen pass inside this window's half
                 GXSetViewport(view_port->x_orig, view_port->y_orig, view_port->width,
                               view_port->height, view_port->near_z, view_port->far_z);
+#else
+                GXSetViewport(0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, 0.0f, 1.0f);
+#endif
 
                 Mtx m2;
                 Mtx44 m;
@@ -2668,7 +2684,9 @@ int mDoGph_Painter() {
                 #endif
 
                 // coop: full-FB capture/composite pass — window 0 only while split
-                if (!dusk::coop::isSplitActive() || wnd == 0) {
+                // TODO(coop v2): consider running bloom once for the final window
+                // so the whole split frame is post-processed
+                if (!coopSplit || wnd == 0) {
                     GX_DEBUG_GROUP(mDoGph_gInf_c::getBloom()->draw);
                 }
                 j3dSys.setViewMtx(camera_p->view.viewMtx);
@@ -2695,31 +2713,37 @@ int mDoGph_Painter() {
                 fapGm_HIO_c::startCpuTimer();
                 #endif
 
-                if (fapGmHIO_getParticle()) {
-                    #if WIDESCREEN_SUPPORT
-                    if (mDoGph_gInf_c::isWideZoom()) {
-                        ortho.setOrtho(0.0f, 0.0f, FB_WIDTH_BASE, FB_HEIGHT_BASE, 100000.0f, -100000.0f);
-                    } else
-                    #endif
-                    {
-                        ortho.setOrtho(mDoGph_gInf_c::getMinXF(), mDoGph_gInf_c::getMinYF(),
-                                       mDoGph_gInf_c::getWidthF(), mDoGph_gInf_c::getHeightF(),
-                                       100000.0f, -100000.0f);
+                // coop: once-per-FRAME tail passes — the 2D game-particle pass
+                // resets the viewport to full-screen and calcFade mutates fade
+                // state, so they must only run on the LAST window (drawn over
+                // the final window's 3D content).
+                if (!coopSplit || wnd == dComIfGp_getWindowNum() - 1) {
+                    if (fapGmHIO_getParticle()) {
+                        #if WIDESCREEN_SUPPORT
+                        if (mDoGph_gInf_c::isWideZoom()) {
+                            ortho.setOrtho(0.0f, 0.0f, FB_WIDTH_BASE, FB_HEIGHT_BASE, 100000.0f, -100000.0f);
+                        } else
+                        #endif
+                        {
+                            ortho.setOrtho(mDoGph_gInf_c::getMinXF(), mDoGph_gInf_c::getMinYF(),
+                                           mDoGph_gInf_c::getWidthF(), mDoGph_gInf_c::getHeightF(),
+                                           100000.0f, -100000.0f);
+                        }
+                        ortho.setPort();
+
+                        Mtx m3;
+                        MTXTrans(m3, FB_WIDTH_BASE / 2, FB_HEIGHT_BASE / 2, 0.0f);
+                        JPADrawInfo draw_info2(m3, 0.0f, FB_HEIGHT_BASE, 0.0f, FB_WIDTH_BASE);
+                        dComIfGp_particle_draw2Dgame(&draw_info2);
                     }
-                    ortho.setPort();
 
-                    Mtx m3;
-                    MTXTrans(m3, FB_WIDTH_BASE / 2, FB_HEIGHT_BASE / 2, 0.0f);
-                    JPADrawInfo draw_info2(m3, 0.0f, FB_HEIGHT_BASE, 0.0f, FB_WIDTH_BASE);
-                    dComIfGp_particle_draw2Dgame(&draw_info2);
-                }
+                    trimming(&camera_p->view, view_port);
 
-                trimming(&camera_p->view, view_port);
-
-                if (strcmp(dComIfGp_getStartStageName(), "F_SP127") != 0 &&
-                    (mDoGph_gInf_c::isFade() & 0x80) == 0)
-                {
-                    mDoGph_gInf_c::calcFade();
+                    if (strcmp(dComIfGp_getStartStageName(), "F_SP127") != 0 &&
+                        (mDoGph_gInf_c::isFade() & 0x80) == 0)
+                    {
+                        mDoGph_gInf_c::calcFade();
+                    }
                 }
 
                 #if DEBUG

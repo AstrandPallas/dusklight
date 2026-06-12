@@ -17,6 +17,11 @@ static State s_state = State::Disabled;
 static unsigned int s_guestProcID[kMaxPlayers - 1] = {kNoProcID, kNoProcID, kNoProcID};
 static unsigned int s_guestActorID[kMaxPlayers - 1] = {kNoProcID, kNoProcID, kNoProcID};
 
+static void restoreSingleWindow() {
+    dComIfGp_setWindow(0, 0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, 0.0f, 1.0f, 0, 2);
+    dComIfGp_setWindowNum(1);
+}
+
 State getState() { return s_state; }
 
 bool isSplitActive() { return s_state == State::Active; }
@@ -38,7 +43,10 @@ int guestPlayerNo(unsigned int procID) {
 }
 
 void tick() {
-    if (!dusk::getSettings().game.coopEnabled) {
+    if (!getSettings().game.coopEnabled) {
+        if (s_state == State::Active) {
+            restoreSingleWindow();
+        }
         s_state = State::Disabled;
         return;
     }
@@ -60,9 +68,8 @@ void tick() {
         dComIfGp_setWindow(1, 0.0f, halfH, FB_WIDTH, halfH, 0.0f, 1.0f, 0, 2);
         dComIfGp_setWindowNum(2);
         s_state = State::Active;  // drives isSplitActive() → aspect + post-process gates
-    } else if (!getSettings().game.coopDebugSplit && dComIfGp_getWindowNum() == 2) {
-        dComIfGp_setWindow(0, 0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, 0.0f, 1.0f, 0, 2);
-        dComIfGp_setWindowNum(1);
+    } else if (s_state == State::Active) {  // keyed on state, not windowNum — can't wedge
+        restoreSingleWindow();
         s_state = State::Solo;
     }
 }
