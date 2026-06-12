@@ -22,7 +22,11 @@ void mDoCPd_c::create() {
     m_gamePad[0] = JKR_NEW JUTGamePad(JUTGamePad::EPort1);
     #endif
 
-    if (DEBUG || mDoMain::developmentMode != 0) {
+    if (DEBUG || mDoMain::developmentMode != 0
+#if TARGET_PC
+        || true  // coop: P2-P4 pads always available on PC
+#endif
+    ) {
         #if PLATFORM_WII
         m_gamePad[0] = JKR_NEW JUTGamePad(JUTGamePad::EPort1);
         #endif
