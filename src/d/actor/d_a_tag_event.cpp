@@ -6,6 +6,10 @@
 #include "d/d_debug_viewer.h"
 #include "d/d_s_play.h"
 
+#if TARGET_PC
+#include "dusk/coop_game.h"
+#endif
+
 static fopAc_ac_c* daTag_getBk(u32 param_0) {
     return fopAcM_searchFromName("Bk", 0xF, param_0);
 }
@@ -197,7 +201,16 @@ int daTag_Event_c::actionReady() {
 
 BOOL daTag_Event_c::checkArea() {
     cXyz pos;
+#if TARGET_PC
+    // coop: map events fire for whichever player crosses the area — skipping
+    // the trigger entirely is the sequence break. The demo still runs on P1
+    // and the stashed guest is restored at P1's side. Horse-rodeo triggers
+    // stay pinned to P1: they flip P1's horse into rodeo mode.
+    fopAc_ac_c* player = horseRodeo() ? (fopAc_ac_c*)dComIfGp_getLinkPlayer()
+                                      : dusk::coop::nearestPlayer(current.pos);
+#else
     daPy_py_c* player = dComIfGp_getLinkPlayer();
+#endif
 
     if (getAreaType() == 0x8000) {
         pos = player->current.pos;

@@ -12,6 +12,10 @@
 #include "d/actor/d_a_tag_evtarea.h"
 #include <cstring>
 
+#if TARGET_PC
+#include "dusk/coop_game.h"
+#endif
+
 enum Kolin_RES_File_ID {
     /* BCK */
     /* 0x06 */ BCK_KOLIN_F_TALK_A = 0x6,
@@ -2029,7 +2033,14 @@ int daNpc_Kolin_c::timidWalk(void* param_1) {
                 actor_p = mActorMngr[0].getActorP();
 
                 if (actor_p != NULL) {
+#if TARGET_PC
+                    // coop: Colin's forced path-block convo fires for whichever
+                    // player enters the area; the dialogue still runs on P1
+                    if (((daTag_EvtArea_c*)actor_p)->chkPointInArea(
+                            dusk::coop::nearestPlayer(actor_p->current.pos)->current.pos)) {
+#else
                     if (((daTag_EvtArea_c*)actor_p)->chkPointInArea(daPy_getPlayerActorClass()->current.pos)) {
+#endif
                         mEvtNo = 4;
                     }
                 }

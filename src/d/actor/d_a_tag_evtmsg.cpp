@@ -10,6 +10,10 @@
 #include "d/d_com_inf_game.h"
 #include "f_pc/f_pc_name.h"
 
+#if TARGET_PC
+#include "dusk/coop_game.h"
+#endif
+
 enum evt_cut_e {
     EVT_CUT_NONE_e,
     EVT_CUT_TALK_e,
@@ -99,10 +103,19 @@ int daTag_EvtMsg_c::Execute() {
         } else if (isDelete()) {
             fopAcM_delete(this);
         } else {
-            if (mFlowID != -1 && chkPointInArea(daPy_getPlayerActorClass()->current.pos)) {
+#if TARGET_PC
+            // coop: the forced message fires for whichever player crosses the
+            // area. The facing test below must read the same player's angle —
+            // fopAcM_searchPlayerAngleY already resolves to the nearest player.
+            // The ordered talk/speak event itself still runs on P1.
+            fopAc_ac_c* triggerPlayer = dusk::coop::nearestPlayer(current.pos);
+#else
+            fopAc_ac_c* triggerPlayer = daPy_getPlayerActorClass();
+#endif
+            if (mFlowID != -1 && chkPointInArea(triggerPlayer->current.pos)) {
                 if (getProcType() == 0) {
                     s16 var_r28 = (s16)(fopAcM_searchPlayerAngleY(this) + 0x7FFF);
-                    var_r28 = var_r28 - daPy_getPlayerActorClass()->current.angle.y;
+                    var_r28 = var_r28 - triggerPlayer->current.angle.y;
 
                     if (var_r28 < 0) {
                         var_r28 = -var_r28;
