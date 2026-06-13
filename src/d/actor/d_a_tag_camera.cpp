@@ -7,6 +7,9 @@
 #include "d/d_com_inf_game.h"
 #include "d/d_debug_viewer.h"
 #include "d/d_s_play.h"
+#if TARGET_PC
+#include "dusk/coop.h"
+#endif
 
 namespace {
 bool always_true() {
@@ -274,6 +277,65 @@ int daTag_Cam_c::execute() {
             dCam_getBody()->SetTagData(this, cam_id, priority, rail_id);
         }
     }
+
+#if TARGET_PC
+    // coop: P1 is handled above, byte-identical to upstream. Drive each guest's
+    // own camera into the same zone independently, mirroring the detection and
+    // SetTagData against that guest's position/camera — without this, P2's camera
+    // ignores room/fixed/event camera tags and clips or misframes in dungeons.
+    if (do_area_check) {
+        for (int p = 1; p < dusk::coop::playerCount(); p++) {
+            fopAc_ac_c* guest = dComIfGp_getPlayer(p);
+            if (guest == NULL) continue;
+
+            cXyz pos(guest->current.pos);
+            if (dComIfGp_checkPlayerStatus0(p, 8)) {
+                pos = guest->attention_info.position;
+                pos.y -= 80.0f;
+            }
+
+            bool guest_in = false;
+            if (getAreaNoChk()) {
+                guest_in = true;
+            } else if (getAreaType() == 0) {
+                cXyz gp = pos;
+                if (home.angle.y != 0) {
+                    mDoMtx_stack_c::transS(current.pos);
+                    mDoMtx_stack_c::YrotM(-home.angle.y);
+                    cXyz sp = pos - current.pos;
+                    mDoMtx_stack_c::multVec(&sp, &gp);
+                }
+                if (mBoundsLo.x <= gp.x && gp.x <= mBoundsHi.x && mBoundsLo.y <= gp.y &&
+                    gp.y <= mBoundsHi.y && mBoundsLo.z <= gp.z && gp.z <= mBoundsHi.z) {
+                    guest_in = true;
+                }
+            } else {
+                f32 dx = current.pos.x - pos.x;
+                f32 dz = current.pos.z - pos.z;
+                if (std::sqrt(dx * dx + dz * dz) < scale.x && mBoundsLo.y <= pos.y &&
+                    pos.y <= mBoundsHi.y) {
+                    guest_in = true;
+                }
+            }
+            if (!guest_in) continue;
+
+            camera_process_class* camProc = (camera_process_class*)dComIfGp_getCamera(p);
+            if (camProc == NULL) continue;
+
+            u16 priority = getPrio();
+            u8 condition = getCondition();
+            bool set_camera = mCheckFunc();
+            if (condition == 0xFF) {
+                priority |= 0x8000;
+            } else if (condition == 0xFA && camProc->mCamera.CheckFlag(0x8000000)) {
+                set_camera = true;
+            }
+            if (set_camera) {
+                camProc->mCamera.SetTagData(this, getCameraId(), priority, getRailID());
+            }
+        }
+    }
+#endif
 
     return 1;
 }
