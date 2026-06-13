@@ -662,6 +662,19 @@ int dAttention_c::SelectAttention(fopAc_ac_c* i_actor) {
 #endif
 
     mPlayerAttentionFlags = mpPlayer->attention_info.flags;
+#if TARGET_PC
+    // coop: a guest Link's attention_info.flags is forced to 0 so P1 can't lock
+    // onto it (see d_a_alink create) — but the engine reuses that same field as
+    // the SEEKER mask here, ANDed against candidates in calcWeight. With it 0 the
+    // guest matches nothing and can never acquire a target. Borrow P1's Link
+    // seeker mask so P2's lock-on actually finds enemies.
+    if (mPlayerAttentionFlags == 0 && fopAcM_GetName(mpPlayer) == fpcNm_ALINK_e) {
+        fopAc_ac_c* p1 = dComIfGp_getPlayer(0);
+        if (p1 != NULL) {
+            mPlayerAttentionFlags = p1->attention_info.flags;
+        }
+    }
+#endif
 
     cSGlobe globe(i_actor->attention_info.position - mOwnerAttnPos);
     angle = globe.U() - fopAcM_GetShapeAngle_p(mpPlayer)->y;
