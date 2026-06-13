@@ -505,9 +505,6 @@ void begin_presentation_camera() {
     // camera-0-pinned globals above (audio listener, cull frustum, j3dSys view)
     // are intentionally not touched here, mirroring view_setup/camera_draw.
     for (int id = 1; id < kNumCameraSlots; ++id) {
-        if (!camera_slot_fresh(id)) {
-            continue;
-        }
         ::camera_process_class* cam = dComIfGp_getCamera(id);
         if (cam == nullptr) {
             continue;
@@ -516,7 +513,15 @@ void begin_presentation_camera() {
         std::memcpy(&s_presentation_view_restore[id].backup, cam_view, sizeof(view_class));
         s_presentation_view_restore[id].view = cam_view;
 
-        interp_view(cam_view, id);
+        // coop: interpolate only when this camera has two consecutive snapshots.
+        // A freshly (re)created guest camera — e.g. P2 rejoining after a loading
+        // zone — has no history yet; rather than skip it (which left P2's window
+        // rendering a stale/black view until a pause-menu toggle forced a
+        // refresh), still rebuild its matrices below from its live sim view so
+        // the window shows the real picture immediately, just without blending.
+        if (camera_slot_fresh(id)) {
+            interp_view(cam_view, id);
+        }
         C_MTXPerspective(cam_view->projMtx, cam_view->fovy, cam_view->aspect, cam_view->near_,
                          cam_view->far_);
         mDoMtx_lookAt(cam_view->viewMtx, &cam_view->lookat.eye, &cam_view->lookat.center,
