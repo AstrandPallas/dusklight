@@ -19,6 +19,16 @@
 #include "d/actor/d_a_hozelda.h"
 #if TARGET_PC
 #include "dusk/achievements.h"
+#include "dusk/coop/coop_manager.hpp"
+#endif
+
+// coop: owner-threaded player accessor. Solo / un-stamped projectiles resolve
+// to the P1 singleton (daAlink_getAlinkActorClass()), so non-co-op is
+// byte-for-byte vanilla; a guest-fired arrow resolves to the guest.
+#if TARGET_PC
+#define ARROW_OWNER() dusk::coop::getOwnerAlink(this)
+#else
+#define ARROW_OWNER() daAlink_getAlinkActorClass()
 #endif
 
 int daArrow_c::createHeap() {
@@ -212,7 +222,7 @@ int daArrow_c::setArrowWaterNextPos(cXyz* i_start, cXyz* i_end) {
 }
 
 void daArrow_c::setArrowAt(f32 param_0) {
-    daAlink_c* player = daAlink_getAlinkActorClass();
+    daAlink_c* player = ARROW_OWNER();
 
     f32 radius;
     if (mArrowType == 4) {
@@ -265,7 +275,7 @@ void daArrow_c::setArrowAt(f32 param_0) {
 }
 
 void daArrow_c::arrowShooting() {
-    daAlink_c* link = daAlink_getAlinkActorClass();
+    daAlink_c* link = ARROW_OWNER();
 
     field_0x950 = link->getBombArrowFlyExplodeTime();
 
@@ -412,7 +422,7 @@ void daArrow_c::setKeepMatrix() {
         }
     } else {
         mDoMtx_stack_c::YrotS(-0x8000);
-        mDoMtx_stack_c::revConcat(daAlink_getAlinkActorClass()->getLeftItemMatrix());
+        mDoMtx_stack_c::revConcat(ARROW_OWNER()->getLeftItemMatrix());
     }
     mpModel->setBaseTRMtx(mDoMtx_stack_c::get());
     mDoMtx_multVecZero(mpModel->getBaseTRMtx(), &current.pos);
@@ -485,7 +495,7 @@ int daArrow_c::procWait() {
         tevStr.TevColor.g = 0;
         tevStr.TevColor.b = 0;
 
-        daAlink_c* link = daAlink_getAlinkActorClass();
+        daAlink_c* link = ARROW_OWNER();
         if (mArrowType == 1) {
             field_0x688.SetAtAtp(0);
             if (!link->checkCanoeSlider()) {
@@ -1173,7 +1183,7 @@ cPhs_Step daArrow_c::create() {
     field_0x7cc.Set(l_coSphSrc);
     field_0x7cc.SetStts(&field_0x64c);
 
-    daAlink_c* player = daAlink_getAlinkActorClass();
+    daAlink_c* player = ARROW_OWNER();
     if (mArrowType == 4) {
         setNormalMatrix();
         player->getArrowFlyData(&mFlyMax, &field_0x99c, 0);

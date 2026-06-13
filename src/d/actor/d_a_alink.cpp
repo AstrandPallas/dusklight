@@ -54,6 +54,7 @@
 #if TARGET_PC
 #include "dusk/action_bindings.h"
 #include "dusk/coop.h"
+#include "dusk/coop/coop_manager.hpp"
 #include "dusk/frame_interpolation.h"
 #include "dusk/settings.h"
 #include "res/Object/Alink.h"
@@ -14314,14 +14315,26 @@ BOOL daAlink_c::setItemModel() {
 BOOL daAlink_c::setItemActor() {
     fopAc_ac_c* actor;
     if (mEquipItem == dItemNo_BOOMERANG_e) {
+#if TARGET_PC
+        // coop: thread boomerang aim/catch/keep-matrix back to the firing
+        // player. The latch covers create() (runs synchronously inside
+        // fastCreate, before the ID stamp); the ID stamp pins it afterwards.
+        dusk::coop::beginPendingProjectileOwner(mPlayerNo);
+#endif
         actor = (fopAc_ac_c*)fopAcM_fastCreate(fpcNm_BOOMERANG_e, 0, &current.pos, -1,
                                                NULL, NULL, -1, NULL, NULL);
+#if TARGET_PC
+        dusk::coop::endPendingProjectileOwner();
+#endif
         if (actor == NULL) {
             deleteEquipItem(FALSE, FALSE);
             return 0;
         }
 
         mItemAcKeep.setData(actor);
+#if TARGET_PC
+        dusk::coop::setProjectileOwner(fopAcM_GetID(actor), mPlayerNo);
+#endif
         field_0x2f94 = 2;
         return 1;
     }
@@ -14383,14 +14396,26 @@ BOOL daAlink_c::setItemActor() {
         cXyz create_pos = (mLeftHandPos + mRightHandPos) * 0.5f;
         if (checkReadyItem()) {
             fopAc_ac_c* actor;
+#if TARGET_PC
+            // coop: latch owner across create() (synchronous in fastCreate)
+            dusk::coop::beginPendingProjectileOwner(mPlayerNo);
+#endif
             if (mEquipItem == dItemNo_NORMAL_BOMB_e) {
                 actor = dBomb_c::createNormalBombPlayer(&create_pos);
             } else {
                 actor = dBomb_c::createWaterBombPlayer(&create_pos);
             }
+#if TARGET_PC
+            dusk::coop::endPendingProjectileOwner();
+#endif
 
             if (actor != NULL) {
                 mActiveBombNum++;
+#if TARGET_PC
+                // coop: thread bomb carry-offset / owner bomb-count back to the
+                // firing player (mActiveBombNum is decremented in the bomb's dtor)
+                dusk::coop::setProjectileOwner(fopAcM_GetID(actor), mPlayerNo);
+#endif
                 setGrabItemActor(actor);
                 dComIfGp_addSelectItemNum(mSelectItemId, -1);
                 field_0x33e4 = 38.0f;

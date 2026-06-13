@@ -13,6 +13,16 @@
 #include "d/actor/d_a_mirror.h"
 #include "Z2AudioLib/Z2Instances.h"
 #include "SSystem/SComponent/c_math.h"
+#if TARGET_PC
+#include "dusk/coop/coop_manager.hpp"
+#endif
+
+// coop: owner-threaded player accessor (P1 fallback keeps solo vanilla).
+#if TARGET_PC
+#define BOOM_OWNER() dusk::coop::getOwnerAlink(this)
+#else
+#define BOOM_OWNER() daAlink_getAlinkActorClass()
+#endif
 
 int daBoomerang_sight_c::createHeap() {
     void* tmpData;
@@ -634,7 +644,7 @@ void daBoomerang_c::setRoomInfo() {
 }
 
 void daBoomerang_c::setKeepMatrix() {
-    daAlink_c* player = daAlink_getAlinkActorClass();
+    daAlink_c* player = BOOM_OWNER();
 
     mDoMtx_stack_c::copy(player->getLeftItemMatrix());
     mDoMtx_stack_c::transM(32.0f, -5.0f, -6.0f);
@@ -685,7 +695,7 @@ void daBoomerang_c::setAimPos() {
     if (checkStateFlg0(FLG0_1)) {
         if (fopAcM_GetParam(this) != 1)
             return;
-        m_aimPos = daAlink_getAlinkActorClass()->getBoomerangCatchPos();
+        m_aimPos = BOOM_OWNER()->getBoomerangCatchPos();
         return;
     }
 
@@ -880,7 +890,7 @@ void daBoomerang_c::setEffect() {
 }
 
 int daBoomerang_c::procWait() {
-    daAlink_c* player = daAlink_getAlinkActorClass();
+    daAlink_c* player = BOOM_OWNER();
     speedF = 0.0f;
     setKeepMatrix();
 
@@ -1030,7 +1040,7 @@ int daBoomerang_c::procWait() {
 }
 
 int daBoomerang_c::procMove() {
-    daAlink_c* player = daAlink_getAlinkActorClass();
+    daAlink_c* player = BOOM_OWNER();
 
     if (field_0x957 != 0) {
         speedF = 40.0f;
@@ -1275,7 +1285,7 @@ int daBoomerang_c::execute() {
         }
     }
 
-    daAlink_c* player = daAlink_getAlinkActorClass();
+    daAlink_c* player = BOOM_OWNER();
 
     if (dStage_stagInfo_GetSTType(dComIfGp_getStage()->getStagInfo()) != ST_BOSS_ROOM) {
         f32 temp_f31 = 500.0f + player->getBoomLockMax();

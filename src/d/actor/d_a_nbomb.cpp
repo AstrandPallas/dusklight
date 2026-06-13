@@ -15,11 +15,25 @@
 #include "d/actor/d_a_mirror.h"
 #include "JSystem/JAudio2/JAUSectionHeap.h"
 #include <cstring>
+#if TARGET_PC
+#include "dusk/coop/coop_manager.hpp"
+#endif
+
+// coop: owner-threaded player accessor (P1 fallback keeps solo vanilla). Only
+// the owner-relevant reads (carry offset/grab, owner bomb-count, insect facing
+// and self-hit exclusion) are rerouted; global tuning reads (gravity, bounce,
+// explode time, freeze tint) stay on the P1 singleton — they are identical for
+// every player.
+#if TARGET_PC
+#define BOMB_OWNER() dusk::coop::getOwnerAlink(this)
+#else
+#define BOMB_OWNER() daAlink_getAlinkActorClass()
+#endif
 
 void daNbomb_c::coHitCallback(fopAc_ac_c* i_hitActor) {
     if (fopAcM_GetGroup(i_hitActor) == fopAc_ENEMY_e ||
         (checkStateFlg0(FLG0_INSECT_BOMB) &&
-         (!checkStateFlg0(FLG0_NO_HIT_PLAYER) || i_hitActor != daAlink_getAlinkActorClass())))
+         (!checkStateFlg0(FLG0_NO_HIT_PLAYER) || i_hitActor != BOMB_OWNER())))
     {
         onStateFlg0(FLG0_BOMB_HIT);
     }
@@ -242,7 +256,12 @@ int daNbomb_c::create() {
     mSph2.SetR(110.0f);
     mSph2.SetTgHitCallback(daNbomb_tgHitCallback);
 
-    daAlink_c* player = daAlink_getAlinkActorClass();
+    // coop: rerouted to the owner — its tuning reads (gravity/fall/explode) are
+    // identical to P1's, but the PRM_INSECT_BOMB_PLAYER branch below seeds the
+    // bomb's facing from player->shape_angle.y, which must be the firer's.
+    // create() runs synchronously inside fastCreate, so the owner is resolved
+    // here via the create-phase latch the firing player set around the call.
+    daAlink_c* player = BOMB_OWNER();
     gravity = player->getBombGravity();
     maxFallSpeed = player->getBombMaxFallSpeed();
     mExTime = player->getBombExplodeTime();
@@ -394,7 +413,9 @@ daNbomb_c::~daNbomb_c() {
         dComIfG_resDelete(&mPhase, m_arcNameList[mType]);
     }
 
-    daAlink_c* player = daAlink_getAlinkActorClass();
+    // coop: decrement the OWNING player's active-bomb count (it was
+    // incremented on the firer at creation); P1 fallback keeps solo vanilla
+    daAlink_c* player = BOMB_OWNER();
     if (player != NULL) {
         if (checkStateFlg0(FLG0_INSECT_BOMB)) {
             player->decrementInsectBombCnt();
@@ -520,7 +541,7 @@ void daNbomb_c::setEffect() {
 }
 
 void daNbomb_c::setHookshotOffset() {
-    daAlink_c* player = daAlink_getAlinkActorClass();
+    daAlink_c* player = BOMB_OWNER();
 
     cXyz offset = player->current.pos - current.pos;
     offset.y = 0.0f;
@@ -774,7 +795,7 @@ BOOL daNbomb_c::procCarryInit() {
     if (checkStateFlg0(FLG0_INSECT_BOMB)) {
         mpBck->init((J3DAnmTransform*)dComIfG_getObjectRes(daAlink_c::getAlinkArcName(), 0x15),
                     TRUE, -1, 1.0f, 0, -1, true);
-        shape_angle.set(0, daAlink_getAlinkActorClass()->shape_angle.y, 0);
+        shape_angle.set(0, BOMB_OWNER()->shape_angle.y, 0);
         mDoMtx_copy(cMtx_getIdentity(), field_0xa40);
     }
 
@@ -786,7 +807,7 @@ BOOL daNbomb_c::procCarryInit() {
 }
 
 BOOL daNbomb_c::procCarry() {
-    daAlink_c* player = daAlink_getAlinkActorClass();
+    daAlink_c* player = BOMB_OWNER();
 
     cLib_chaseF(&field_0xbb0, 0.0f, 1.0f);
 
@@ -846,9 +867,12 @@ BOOL daNbomb_c::procCarry() {
     setRoomInfo();
 
     if (fopAcM_GetParam(this) == 1) {
-        if (daAlink_getAlinkActorClass()->getGrabActorID() == fopAcM_GetID(this)) {
-            daAlink_getAlinkActorClass()->setGrabCollisionOffset(current.pos.x - sp40.x,
-                                                                 current.pos.z - sp40.z, NULL);
+        // coop: report the carried bomb's collision push-back to the player
+        // actually holding it (the owner), not always P1
+        daAlink_c* carrier = BOMB_OWNER();
+        if (carrier->getGrabActorID() == fopAcM_GetID(this)) {
+            carrier->setGrabCollisionOffset(current.pos.x - sp40.x,
+                                            current.pos.z - sp40.z, NULL);
         }
     }
 

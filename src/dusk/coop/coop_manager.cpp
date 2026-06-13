@@ -2,6 +2,7 @@
 
 #include "SSystem/SComponent/c_malloc.h"
 #include "dusk/coop_game.h"
+#include "d/actor/d_a_alink.h"
 #include "d/actor/d_a_player.h"
 #include "d/d_attention.h"
 #include "d/d_com_inf_game.h"
@@ -58,6 +59,32 @@ static int s_rejoinWaitFrames = 0;
 // reuses the live instance and cancels the reap.
 static dAttention_c* s_attention[kMaxPlayers - 1];
 static unsigned int s_attnReapID[kMaxPlayers - 1] = {kNoProcID, kNoProcID, kNoProcID};
+
+// Per-player projectile ownership table. Keyed by the projectile actor's ID,
+// value is the firing player's slot (1..kMaxPlayers-1; P1/slot 0 is never
+// recorded — it shares the vanilla singleton fallback). Bounded in practice:
+// each player has at most one live arrow/sling stone and one boomerang, plus a
+// few player bombs (mActiveBombNum caps at 3), so a small fixed table covers
+// every guest's in-flight projectiles with room to spare. Stale entries (a
+// freed projectile's ID) are harmless — getOwnerAlink re-checks the owner
+// player is live and falls back to P1 otherwise, and a slot is reclaimed the
+// next time an equal/colliding ID is stamped. kNoProcID marks a free slot.
+static const int kMaxProjectileOwners = 32;
+static unsigned int s_projOwnerID[kMaxProjectileOwners];
+static u8 s_projOwnerNo[kMaxProjectileOwners];
+static bool s_projOwnerInit = false;
+
+// Create-phase owner latch (see header). -1 = inactive.
+static int s_pendingOwnerNo = -1;
+
+static void initProjectileOwners() {
+    if (s_projOwnerInit) return;
+    for (int i = 0; i < kMaxProjectileOwners; i++) {
+        s_projOwnerID[i] = kNoProcID;
+        s_projOwnerNo[i] = 0;
+    }
+    s_projOwnerInit = true;
+}
 
 // Hide+freeze bit for stashed guests. f_op_actor.cpp skips BOTH execute and
 // draw while this status is set, unconditionally — the usual
@@ -519,6 +546,73 @@ void tick() {
     } else {
         holdFrames = 0;
     }
+}
+
+void setProjectileOwner(unsigned int projectileActorID, int ownerPlayerNo) {
+    initProjectileOwners();
+    // slot 0 (P1) records nothing — vanilla singleton already resolves to it.
+    if (ownerPlayerNo <= 0 || ownerPlayerNo >= kMaxPlayers) return;
+    if (projectileActorID == kNoProcID) return;
+    int freeIdx = -1;
+    for (int i = 0; i < kMaxProjectileOwners; i++) {
+        // overwrite any existing entry for this ID (a re-fired pooled arrow
+        // keeps the same actor ID across shots)
+        if (s_projOwnerID[i] == projectileActorID) {
+            s_projOwnerNo[i] = (u8)ownerPlayerNo;
+            return;
+        }
+        if (freeIdx < 0 && s_projOwnerID[i] == kNoProcID) freeIdx = i;
+    }
+    if (freeIdx < 0) {
+        // table full (shouldn't happen at v1 player counts) — reclaim the slot
+        // of any owner whose projectile actor is already gone
+        for (int i = 0; i < kMaxProjectileOwners; i++) {
+            fopAc_ac_c* dead = NULL;
+            if (fopAcM_SearchByID(s_projOwnerID[i], &dead) == 0) {
+                freeIdx = i;
+                break;
+            }
+        }
+    }
+    if (freeIdx < 0) return;  // give up gracefully → projectile falls back to P1
+    s_projOwnerID[freeIdx] = projectileActorID;
+    s_projOwnerNo[freeIdx] = (u8)ownerPlayerNo;
+}
+
+int getProjectileOwnerPlayerNo(unsigned int projectileActorID) {
+    if (!s_projOwnerInit || projectileActorID == kNoProcID) return -1;
+    for (int i = 0; i < kMaxProjectileOwners; i++) {
+        if (s_projOwnerID[i] == projectileActorID) return s_projOwnerNo[i];
+    }
+    return -1;
+}
+
+void beginPendingProjectileOwner(int ownerPlayerNo) {
+    s_pendingOwnerNo = (ownerPlayerNo > 0 && ownerPlayerNo < kMaxPlayers) ? ownerPlayerNo : -1;
+}
+
+void endPendingProjectileOwner() {
+    s_pendingOwnerNo = -1;
+}
+
+daAlink_c* getOwnerAlink(fopAc_ac_c* projectile) {
+    int ownerNo = -1;
+    if (projectile != NULL) {
+        ownerNo = getProjectileOwnerPlayerNo(fopAcM_GetID(projectile));
+    }
+    // create-phase fallback: the ID stamp hasn't landed yet, so honor the
+    // latch the firing player set around the fastCreate call
+    if (ownerNo <= 0 && s_pendingOwnerNo > 0) {
+        ownerNo = s_pendingOwnerNo;
+    }
+    if (ownerNo > 0 && ownerNo < kMaxPlayers) {
+        daAlink_c* owner = (daAlink_c*)dComIfGp_getPlayer(ownerNo);
+        if (owner != NULL) {
+            return owner;
+        }
+    }
+    // solo, P1-owned, unrecorded, or the owner actor is gone → vanilla P1
+    return daAlink_getAlinkActorClass();
 }
 
 }  // namespace dusk::coop

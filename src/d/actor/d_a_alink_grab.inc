@@ -1358,10 +1358,25 @@ int daAlink_c::procPickPut() {
         checkNextAction(1);
     } else if (framectrl->checkPass(9.0f)) {
         if (mProcVar2.field_0x300c != 0) {
+#if TARGET_PC
+            // coop: latch owner across create() (insect-bomb facing is set
+            // there), then pin by ID
+            dusk::coop::beginPendingProjectileOwner(mPlayerNo);
+            fopAc_ac_c* insect_p =
+                checkReadyItem() ? dBomb_c::createInsectBombPlayer(&current.pos) : NULL;
+            dusk::coop::endPendingProjectileOwner();
+            if (insect_p != NULL) {
+                // coop: thread insect bomb facing / owner bomb-count to the firer
+                dusk::coop::setProjectileOwner(fopAcM_GetID(insect_p), mPlayerNo);
+                dComIfGp_addSelectItemNum(mSelectItemId, -1);
+                field_0x2fcf++;
+            }
+#else
             if (checkReadyItem() && dBomb_c::createInsectBombPlayer(&current.pos)) {
                 dComIfGp_addSelectItemNum(mSelectItemId, -1);
                 field_0x2fcf++;
             }
+#endif
             mEquipItem = dItemNo_NONE_e;
         } else {
             field_0x3198 = 0;

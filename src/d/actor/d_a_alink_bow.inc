@@ -113,7 +113,20 @@ void daAlink_c::makeArrow() {
             field_0x301e = 0;
         }
 
+#if TARGET_PC
+        // coop: thread arrow spawn pos / aim / keep-matrix back to the firing
+        // player. Latch covers create() (synchronous in fastCreate); ID stamp
+        // pins it afterwards. The arrow is pooled (re-fired keeping its actor
+        // ID) so the owner is re-stamped on every makeArrow.
+        dusk::coop::beginPendingProjectileOwner(mPlayerNo);
         mItemAcKeep.setData(daArrow_c::makeArrow(this, field_0x301e));
+        dusk::coop::endPendingProjectileOwner();
+        if (mItemAcKeep.getActor() != NULL) {
+            dusk::coop::setProjectileOwner(fopAcM_GetID(mItemAcKeep.getActor()), mPlayerNo);
+        }
+#else
+        mItemAcKeep.setData(daArrow_c::makeArrow(this, field_0x301e));
+#endif
 
         if (mItemAcKeep.getActor() == NULL) {
             // "Not enough memory to create item!!"
@@ -286,11 +299,26 @@ BOOL daAlink_c::checkUpperItemActionBow() {
                 u16 bck_res_id;
                 if (mEquipItem == dItemNo_PACHINKO_e) {
                     bck_res_id = dRes_ID_ALANM_BCK_PSHOOT_e;
+#if TARGET_PC
+                    // coop: latch owner across create(), then pin by ID
+                    dusk::coop::beginPendingProjectileOwner(mPlayerNo);
+                    fopAc_ac_c* sling_p =
+                        (dComIfGs_getPachinkoNum() != 0)
+                            ? daArrow_c::makeSlingStone(this, &mHeldItemRootPos)
+                            : NULL;
+                    dusk::coop::endPendingProjectileOwner();
+                    if (sling_p != NULL) {
+                        // coop: thread sling stone aim/keep-matrix to the firer
+                        dusk::coop::setProjectileOwner(fopAcM_GetID(sling_p), mPlayerNo);
+                        dComIfGp_setItemPachinkoNumCount(-1);
+                    }
+#else
                     if (dComIfGs_getPachinkoNum() != 0 &&
                         daArrow_c::makeSlingStone(this, &mHeldItemRootPos) != NULL)
                     {
                         dComIfGp_setItemPachinkoNumCount(-1);
                     }
+#endif
                 } else if (field_0x301c != 0) {
                     bck_res_id = dRes_ID_ALANM_BCK_BASHOOT_e;
                 } else {
