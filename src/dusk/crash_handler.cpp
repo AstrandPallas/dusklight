@@ -503,6 +503,31 @@ LONG WINAPI windowsHandler(EXCEPTION_POINTERS* ep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+// A stack overflow exhausts the stack before SetUnhandledExceptionFilter can
+// run, so windowsHandler never fires for it and the process dies with no trace.
+// A vectored handler runs first-chance, and paired with the SetThreadStackGuarantee
+// reserve in install() it has enough emergency stack to emit the recursing call
+// stack (symbolicated via DbgHelp). Only the overflow is handled here; every
+// other exception falls through to normal SEH / windowsHandler.
+LONG WINAPI vectoredHandler(EXCEPTION_POINTERS* ep) {
+    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_STACK_OVERFLOW) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    if (InterlockedCompareExchange(&g_inHandler, 1, 0) != 0) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    emit(kStderrFd, ep);
+    const int logFd = dusk::GetLogFileDescriptor();
+    if (logFd >= 0) {
+        emit(logFd, ep);
+        _commit(logFd);
+    }
+    // a stack overflow is unrecoverable — end the process now that the trace is
+    // written, rather than letting it limp into undefined behavior
+    ::TerminateProcess(::GetCurrentProcess(), 0xDEAD57AC);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 #else
 
 constexpr int kSignals[] = {SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE};
@@ -934,6 +959,14 @@ void install() {
     SymInitialize(GetCurrentProcess(), nullptr, TRUE);
 #endif
     g_prevFilter = SetUnhandledExceptionFilter(&windowsHandler);
+    // reserve emergency stack on this thread and install a vectored handler so a
+    // STACK OVERFLOW (which bypasses SetUnhandledExceptionFilter) still emits a
+    // symbolicated trace instead of dying silently
+    {
+        ULONG stackGuarantee = 256 * 1024;
+        SetThreadStackGuarantee(&stackGuarantee);
+    }
+    AddVectoredExceptionHandler(/*first*/ 1, &vectoredHandler);
 #elif !defined(__APPLE__) || !TARGET_OS_TV
     Dl_info moduleInfo;
     if (dladdr(reinterpret_cast<void*>(&install), &moduleInfo) != 0) {
