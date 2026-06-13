@@ -55,6 +55,21 @@ static constexpr f32 kGuestSpawnOffsetX = 100.0f;
 static constexpr int kRejoinTimeoutFrames = 1800;
 static int s_rejoinWaitFrames = 0;
 
+// coop: story-event settle gate. A second Link present while the single-track
+// event system runs hangs it, so P2 is EVICTED (despawned) when a story event
+// starts — not suspended. Reviving a suspended guest into the immediate
+// post-event frame (esp. the first-twilight transform) hangs, but a FRESH
+// create after the event is the proven-safe path (it's how form-reconcile
+// already rebuilds P2). The event flickers event_runCheck on/off for many
+// frames as it settles, so the rejoin waits for the coast to stay clear this
+// many consecutive frames before recreating P2. This was sized large (45)
+// defensively, back when recreating P2 mid-flicker could crash; with the real
+// crashes fixed (aurora vertex-buffer cap + the guarded startup-event block) it
+// only needs to debounce the event flicker, so it's short now — P2 snaps back
+// promptly once the event ends.
+static constexpr int kEventSettleFrames = 12;
+static int s_eventSettleFrames = 0;
+
 // Per-player Z-targeting: slot [n] is player n+1's dAttention_c (P1's lives
 // embedded in dComIfG_play_c). Created at join REQUEST time — before the
 // guest actor's create phase caches dComIfGp_getAttention(mPlayerNo) and
@@ -340,10 +355,13 @@ void drawGuestAttention() {
 }
 
 static void spawnGuest(int playerNo) {
-    if (shouldStash()) {
-        // no joining during cutscenes/menus/rides — also closes the deferred
-        // horse-start hazard (the guest's create would read latched
-        // horse-start globals while P1 rides)
+    if (shouldStash() || dComIfGp_event_runCheck()) {
+        // no joining during cutscenes/menus/rides/story-events — also closes
+        // the deferred horse-start hazard (the guest's create would read latched
+        // horse-start globals while P1 rides). event_runCheck covers forced
+        // story events that aren't a dDemo-with-camera (first-twilight demo38);
+        // a guest created mid-event hangs the single-track event system, so a
+        // mistimed START press during a cutscene is refused, not honored.
         DuskLog.info("coop: P{} join refused (cutscene/menu/ride active)", playerNo + 1);
         return;
     }
@@ -483,17 +501,36 @@ void tick() {
     static int holdFrames = 0;
     if (s_state == State::Solo) {
         holdFrames = 0;
+        // settle counter: count consecutive frames with no story event and no
+        // other stash context. Any event/stash frame resets it. The rejoin only
+        // fires once it crosses the threshold, so a flickering forced event
+        // (demo38) can't bait a fresh P2 into the volatile transition window.
+        if (!shouldStash() && !dComIfGp_event_runCheck()) {
+            if (s_eventSettleFrames < kEventSettleFrames) s_eventSettleFrames++;
+        } else {
+            s_eventSettleFrames = 0;
+        }
         if (mDoCPd_c::getTrigStart(PAD_2)) {
             spawnGuest(1);  // refuses by itself during stash contexts
-        } else if (s_wantRejoin && !shouldStash()) {
-            // auto-rejoin after a scene change took the guest. spawnGuest
-            // clears the flag on success; a transient refusal (P1 still
-            // mid-create, alloc failure) just retries next tick.
+        } else if (s_wantRejoin && !shouldStash() &&
+                   s_eventSettleFrames >= kEventSettleFrames) {
+            // auto-rejoin after a scene change or a story-event eviction took
+            // the guest. spawnGuest clears the flag on success; a transient
+            // refusal (P1 still mid-create, alloc failure) just retries.
+            //
+            // coop: gated on the settle counter — a scene change can drop
+            // straight into a forced story event (first-twilight demo38), and
+            // that event isn't a dDemo-with-camera so shouldStash() misses it.
+            // Recreating a guest INTO a running (or just-ended, still-settling)
+            // event hangs the single-track event system. Wait out the event AND
+            // a stability window, then bring a fresh P2 back.
             spawnGuest(1);
         }
         // a rejoin that never lands (quit-to-title tore the play session
-        // down) must not survive into the next loaded save — time it out
-        if (s_wantRejoin && ++s_rejoinWaitFrames > kRejoinTimeoutFrames) {
+        // down) must not survive into the next loaded save — time it out. Don't
+        // count down while an event is running, or a long forced cutscene would
+        // abandon a legitimately-pending rejoin.
+        if (s_wantRejoin && !dComIfGp_event_runCheck() && ++s_rejoinWaitFrames > kRejoinTimeoutFrames) {
             s_wantRejoin = false;
             s_rejoinWaitFrames = 0;
             DuskLog.info("coop: pending P2 rejoin timed out, abandoned");
@@ -507,6 +544,26 @@ void tick() {
         if (holdFrames > 60 && getGuestActor(1) != NULL) {
             despawnGuest(1);
             holdFrames = 0;
+        } else if (dComIfGp_event_runCheck() && getGuestActor(1) != NULL) {
+            // coop: story-event eviction. A forced cutscene (first-twilight
+            // demo38) isn't a dDemo-with-camera, so shouldStash() misses it, and
+            // a second Link present while the single-track event system runs
+            // hangs it. Despawn now — suspend-and-revive across it died, and so
+            // did auto-recreating a fresh P2 into the gaps of the post-transform
+            // cutscene CHAIN (transform -> wolf -> cell -> Midna): each gap
+            // respawns P2, the next cutscene evicts it, and a camera create
+            // landing in that churn is fatal.
+            //
+            // Auto-rejoin once the event ends AND the world settles: despawn
+            // now, re-arm the rejoin, and let the settle-gated auto-rejoin in
+            // the Solo branch bring a fresh P2 back (it waits kEventSettleFrames
+            // of no-event frames, so it can't recreate P2 into the flickering
+            // transition window). Manual START still works too.
+            despawnGuest(1);   // clears s_wantRejoin
+            s_wantRejoin = true;       // re-arm: auto-rejoin after the event settles
+            s_rejoinWaitFrames = 0;
+            s_eventSettleFrames = 0;
+            DuskLog.info("coop: P2 evicted for story event (auto-rejoin after it ends)");
         } else if (shouldStash()) {
             // Single P1 window while stashed. isSplitActive() goes false, which
             // releases the split-only renderer gates; the guest's camera is
@@ -569,7 +626,9 @@ void tick() {
             // restore: unfreeze next to P1 (the stash context likely moved
             // P1 — a dropped-off horse ride, a cutscene warp). If P1 is gone
             // (scene teardown edge) stay Stashed this tick — gone-detection
-            // will clean up the guest shortly.
+            // will clean up the guest shortly. Stash is now only entered for
+            // pause/ride/demo-with-camera, all of which revive cleanly — story
+            // events take the evict path instead, so no restore hysteresis here.
             if (guest != NULL) {
                 snapGuestToP1(guest, 1);
                 fopAcM_OffStatus(guest, kSuspendStatus);
