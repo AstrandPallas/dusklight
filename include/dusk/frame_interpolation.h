@@ -35,6 +35,12 @@ bool get_ui_tick_pending();
 bool is_sim_frame();
 
 void record_camera(::camera_process_class* cam, int camera_id);
+// Seed both snapshot halves from a camera's freshly-initialized view so it is
+// immediately "fresh" for the next presentation. Used when a camera is created
+// (e.g. a coop guest rejoining after a scene change) and has no recording
+// history yet — without this the slot stays stale and its split window renders
+// black until enough consecutive sim ticks accumulate.
+void seed_camera_slot(::camera_process_class* cam, int camera_id);
 void interp_view(::view_class* view, int camera_id);
 void record_final_mtx(Mtx m, const void *key);
 void record_final_mtx(Mtx m);

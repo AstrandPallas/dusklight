@@ -11744,6 +11744,14 @@ static int init_phase2(camera_class* i_this) {
     store(camera);
     view_setup(camera);
 
+#if TARGET_PC
+    // coop: a camera created mid-session (a guest rejoining after a scene
+    // change) has no interpolation history, so its split window would render
+    // black until consecutive sim ticks accumulate. Seed the slot from this
+    // freshly set-up view so the next presentation is already fresh.
+    dusk::frame_interp::seed_camera_slot(camera, camera_id);
+#endif
+
     camera->mCamera.field_0xb0c = 1;
     if (body->CameraID() == 0) {
 #if DEBUG

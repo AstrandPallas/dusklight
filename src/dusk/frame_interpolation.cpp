@@ -321,6 +321,27 @@ void record_camera(::camera_process_class* cam, int camera_id) {
 #endif
 }
 
+void seed_camera_slot(::camera_process_class* cam, int camera_id) {
+    if (!g_enabled || cam == nullptr || camera_id < 0 || camera_id >= kNumCameraSlots) {
+        return;
+    }
+    // A just-(re)created camera has no history: the scene change cleared the
+    // slots (reset_camera_slots) so prev is invalid and camera_slot_fresh stays
+    // false, which makes begin_presentation_camera skip the window — black until
+    // two consecutive sim ticks happen to record. Seed both halves from the
+    // fresh view with consecutive sequence numbers so the very next presentation
+    // is fresh (a degenerate prev==curr blend = the sim view); the normal
+    // per-tick record/swap takes over from there.
+    CameraSnapshot& curr = s_cam_curr[camera_id];
+    copy_view_to_snap(&curr, cam->view);
+    curr.recorded_seq = g_sim_tick_seq;
+#if WIDESCREEN_SUPPORT
+    curr.wideZoom = mDoGph_gInf_c::isWideZoom();
+#endif
+    s_cam_prev[camera_id] = curr;
+    s_cam_prev[camera_id].recorded_seq = g_sim_tick_seq - 1;
+}
+
 void interp_view(::view_class* view, int camera_id) {
     if (!g_enabled)
         return;
