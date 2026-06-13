@@ -10,10 +10,6 @@
 
 #include "dusk/string.hpp"
 
-#if TARGET_PC
-#include "dusk/coop_game.h"
-#endif
-
 static DUSK_CONST char* l_evtNameList[] = {
     NULL,
     "JUMP_DEMOSTAGE",
@@ -105,14 +101,7 @@ int daTag_Evt_c::execute() {
             }
         }
         if (!isDelete() && cLib_calcTimer(&field_0x5D0) == 0) {
-#if TARGET_PC
-            // coop: the event trigger fires for whichever player crosses the
-            // area; the ordered event still runs on P1 and the stash restore
-            // drops the guest back at P1's side
-            sp14 = dusk::coop::nearestPlayer(current.pos)->current.pos - current.pos;
-#else
             sp14 = daPy_getPlayerActorClass()->current.pos - current.pos;
-#endif
             if (sp14.absXZ() < scale.x && -scale.y < sp14.y && sp14.y < scale.y) {
                 field_0x570 = 1;
             }

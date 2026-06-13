@@ -4,10 +4,6 @@
 #include "d/actor/d_a_npc4.h"
 #include "f_pc/f_pc_name.h"
 
-#if TARGET_PC
-#include "dusk/coop_game.h"
-#endif
-
 void* daTag_Push_c::srchActor(void* param_0, void* param_1) {
     daTag_Push_c* push = (daTag_Push_c*)param_0;
     BOOL bVar1 = false;
@@ -96,16 +92,7 @@ int daTag_Push_c::Execute() {
                 if (actor != NULL &&
                     daPy_getPlayerActorClass()->eventInfo.chkCondition(dEvtCnd_CANTALK_e) != false)
                 {
-#if TARGET_PC
-                    // coop: any player crossing the line summons the blocker NPC.
-                    // The CANTALK gate above stays on P1 — the stop dialogue and
-                    // the pushBackPlayer warp both run on P1, and the stash
-                    // restore drops the guest back at P1's side afterwards.
-                    cXyz triggerPos = dusk::coop::nearestPlayer(current.pos)->current.pos;
-#else
-                    cXyz triggerPos = daPy_getPlayerActorClass()->current.pos;
-#endif
-                    if (chkPointInArea(triggerPos)) {
+                    if (chkPointInArea(cXyz(daPy_getPlayerActorClass()->current.pos))) {
                         if (fopAcM_GetName(actor) == fpcNm_NPC_GRS_e ||
                             fopAcM_GetName(actor) == fpcNm_NPC_GRO_e)
                         {

@@ -13,10 +13,6 @@
 
 #include "dusk/string.hpp"
 
-#if TARGET_PC
-#include "dusk/coop_game.h"
-#endif
-
 static int createHeapCallBack(fopAc_ac_c* i_this) {
     daTag_Msg_c* msg = (daTag_Msg_c*)i_this;
     return msg->createHeap();
@@ -166,13 +162,7 @@ int daTag_Msg_c::draw() {
 }
 
 BOOL daTag_Msg_c::rangeCheck() {
-#if TARGET_PC
-    // coop: the message trigger fires for whichever player enters the range;
-    // the ordered SPEAK event itself still runs on P1
-    cXyz player_dist = dusk::coop::nearestPlayer(current.pos)->current.pos - current.pos;
-#else
     cXyz player_dist = daPy_getPlayerActorClass()->current.pos - current.pos;
-#endif
     return player_dist.absXZ() < scale.x && (-scale.y < player_dist.y && player_dist.y < scale.y);
 }
 
@@ -200,14 +190,8 @@ BOOL daTag_Msg_c::otherCheck() {
     if (field_0x5dd) {
         return 1;
     } else {
-#if TARGET_PC
-        // coop: face-check the same (nearest) player rangeCheck() measured
-        fopAc_ac_c* triggerPlayer = dusk::coop::nearestPlayer(current.pos);
-#else
-        fopAc_ac_c* triggerPlayer = daPy_getPlayerActorClass();
-#endif
-        s16 var_r28 = fopAcM_searchActorAngleY(this, triggerPlayer) + 0x7FFF;
-        s16 angle_to_player = var_r28 - triggerPlayer->current.angle.y;
+        s16 var_r28 = fopAcM_searchActorAngleY(this, daPy_getPlayerActorClass()) + 0x7FFF;
+        s16 angle_to_player = var_r28 - daPy_getPlayerActorClass()->current.angle.y;
         if (angle_to_player < 0) {
             angle_to_player = -angle_to_player;
         }

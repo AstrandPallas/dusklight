@@ -11,10 +11,6 @@
 #include "d/actor/d_a_npc4.h"
 #include "f_op/f_op_actor_mng.h"
 
-#if TARGET_PC
-#include "dusk/coop_game.h"
-#endif
-
 int daTagMstop_c::create() {
     fopAcM_ct(this, daTagMstop_c);
 
@@ -155,22 +151,10 @@ int daTagMstop_c::execute() {
                 !dComIfGs_isEventBit(dSv_event_flag_c::saveBitLabels[field_0x570])))
     {
         return 1;
-    } else {
-#if TARGET_PC
-        // coop: the trigger's Y band must read the same player the XZ range
-        // below already resolves to (fopAcM_searchPlayerDistanceXZ2 targets the
-        // nearest player). The reaction — Midna's talk and the forced
-        // walk-back — stays on player_p/P1; the stashed guest is restored at
-        // P1's side after the event.
-        fopAc_ac_c* trigger_p = dusk::coop::nearestPlayer(current.pos);
-#else
-        fopAc_ac_c* trigger_p = player_p;
-#endif
-        if (current.pos.y <= trigger_p->current.pos.y && field_0x5c4 >= trigger_p->current.pos.y &&
-            fopAcM_searchPlayerDistanceXZ2(this) < field_0x5c0)
-        {
-            eventOrder();
-        }
+    } else if (current.pos.y <= player_p->current.pos.y && field_0x5c4 >= player_p->current.pos.y &&
+               fopAcM_searchPlayerDistanceXZ2(this) < field_0x5c0)
+    {
+        eventOrder();
     }
 
     return 1;

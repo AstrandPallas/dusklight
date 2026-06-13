@@ -18,10 +18,6 @@
 #include "d/d_msg_object.h"
 #include "f_op/f_op_actor.h"
 #include "f_op/f_op_camera_mng.h"
-
-#if TARGET_PC
-#include "dusk/coop_game.h"
-#endif
 #include <types.h>
 #include <cstring>
 
@@ -2837,14 +2833,7 @@ int daNpc_Taro_c::wait(void* param_0) {
         case TYPE_0:
             if (!daNpcT_chkEvtBit(0x1f)) {
                 daTag_EvtArea_c* EvtAreaTag = (daTag_EvtArea_c*)mActors[3].getActorP();
-#if TARGET_PC
-                // coop: Talo's path block fires for whichever player enters the
-                // area; the stop event itself still runs on P1
-                if (EvtAreaTag != NULL && EvtAreaTag->chkPointInArea(
-                        dusk::coop::nearestPlayer(EvtAreaTag->current.pos)->current.pos)) {
-#else
                 if (EvtAreaTag != NULL && EvtAreaTag->chkPointInArea(daPy_getPlayerActorClass()->current.pos)) {
-#endif
                     if (daNpcT_chkEvtBit(0x23b)) {
                         mEvtNo = 8;
                     } else {
@@ -2903,14 +2892,7 @@ int daNpc_Taro_c::wait(void* param_0) {
             daTag_EvtArea_c* evtAreaTag = (daTag_EvtArea_c*)mActors[3].getActorP();
 
             if (evtAreaTag != NULL &&
-#if TARGET_PC
-                // coop: the caged-Talo event triggers for whichever player
-                // approaches; the event still runs on P1
-                evtAreaTag->chkPointInArea(
-                    dusk::coop::nearestPlayer(evtAreaTag->current.pos)->current.pos) &&
-#else
                 evtAreaTag->chkPointInArea(daPy_getPlayerActorClass()->current.pos) &&
-#endif
                 !daNpcT_chkEvtBit(0x25d))
             {
                 mEvtNo = 4;
@@ -3192,17 +3174,7 @@ int daNpc_Taro_c::talk_withMaro(void* param_0) {
                 mMode = MODE_INIT;
             }
             daTag_EvtArea_c* evtAreaTag = (daTag_EvtArea_c*)mActors[3].getActorP();
-#if TARGET_PC
-            // coop: the Talo+Malo "where are you going" stop on the Faron path
-            // fires for whichever player enters the area; the stop event and
-            // dialogue still run on P1
-            if (evtAreaTag != NULL &&
-                evtAreaTag->chkPointInArea(
-                    dusk::coop::nearestPlayer(evtAreaTag->current.pos)->current.pos) &&
-                daNpcT_chkTmpBit(0x16)) {
-#else
             if (evtAreaTag != NULL && evtAreaTag->chkPointInArea(player->current.pos) && daNpcT_chkTmpBit(0x16)) {
-#endif
                 enum TaroEvent evtNo;
                 if (daNpcT_chkEvtBit(0x13)) {
                     evtNo = EVENT_18;
