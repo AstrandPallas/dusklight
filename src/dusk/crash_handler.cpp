@@ -16,7 +16,9 @@
 
 #include <windows.h>
 
+#include <csignal>
 #include <io.h>
+#include <stdlib.h>  // _set_purecall_handler, _set_invalid_parameter_handler
 
 #if defined(DUSK_CRASH_DBGHELP)
 #include <dbghelp.h>
@@ -503,29 +505,219 @@ LONG WINAPI windowsHandler(EXCEPTION_POINTERS* ep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
-// A stack overflow exhausts the stack before SetUnhandledExceptionFilter can
-// run, so windowsHandler never fires for it and the process dies with no trace.
-// A vectored handler runs first-chance, and paired with the SetThreadStackGuarantee
-// reserve in install() it has enough emergency stack to emit the recursing call
-// stack (symbolicated via DbgHelp). Only the overflow is handled here; every
-// other exception falls through to normal SEH / windowsHandler.
+LONG g_firstChanceLogged = 0;
+
+bool isFatalFirstChance(DWORD code) {
+    switch (code) {
+    case EXCEPTION_ACCESS_VIOLATION:
+    case EXCEPTION_IN_PAGE_ERROR:
+    case EXCEPTION_ILLEGAL_INSTRUCTION:
+    case EXCEPTION_PRIV_INSTRUCTION:
+    case EXCEPTION_INT_DIVIDE_BY_ZERO:
+    case EXCEPTION_STACK_OVERFLOW:
+    case 0xC0000409:  // STATUS_STACK_BUFFER_OVERRUN (/GS, __fastfail)
+    case 0xC0000374:  // STATUS_HEAP_CORRUPTION
+        return true;
+    default:
+        return false;  // C++ EH (0xE06D7363) and other benign codes
+    }
+}
+
+// Runs FIRST-CHANCE, before any frame-based __except can unwind. Two jobs:
+//  1) Stack overflow bypasses SetUnhandledExceptionFilter entirely, so the
+//     unhandled filter never sees it — caught here (with the install()
+//     stack-guarantee reserve giving room to symbolicate).
+//  2) The game/SDK has inner __try/__except blocks that can SWALLOW a hardware
+//     fault (e.g. an access violation) before it ever bubbles up to the
+//     unhandled filter — which is why crashes were dying traceless. Logging the
+//     first fatal exception first-chance captures it regardless of who handles
+//     it downstream. For recoverable-by-someone faults (AV) we still return
+//     CONTINUE_SEARCH so behavior is unchanged — we only observe.
 LONG WINAPI vectoredHandler(EXCEPTION_POINTERS* ep) {
-    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_STACK_OVERFLOW) {
+    const DWORD code = ep->ExceptionRecord->ExceptionCode;
+    if (!isFatalFirstChance(code)) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
+    if (InterlockedCompareExchange(&g_firstChanceLogged, 1, 0) == 0) {
+        emit(kStderrFd, ep);
+        const int logFd = dusk::GetLogFileDescriptor();
+        if (logFd >= 0) {
+            emit(logFd, ep);
+            _commit(logFd);
+        }
+    }
+    // unrecoverable corruption — end now that the trace is written. A plain AV
+    // might be deliberately handled by an inner __except, so let it continue.
+    if (code == EXCEPTION_STACK_OVERFLOW || code == 0xC0000409 ||
+        code == 0xC0000374) {
+        ::TerminateProcess(::GetCurrentProcess(), 0xDEAD57AC);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+// ---- hang watchdog -------------------------------------------------------
+// An infinite loop produces no exception, so neither windowsHandler nor
+// vectoredHandler ever fires and the process dies traceless (or has to be
+// force-killed). The watchdog runs on its own thread: the game pulses
+// g_heartbeat once per frame, and if no pulse arrives for kStallSeconds the
+// main thread is presumed hung — we suspend it, walk its stack from a captured
+// CONTEXT (same symbolicated path as a crash), write a HUNG report, and end the
+// process. The window is deliberately generous so a slow scene load can't be
+// mistaken for a hang.
+volatile LONG g_heartbeat = 0;
+volatile LONG g_heartbeatStarted = 0;
+HANDLE g_watchMainThread = nullptr;
+
+void emitHang(int fd, CONTEXT* ctx) {
+    if (fd < 0) {
+        return;
+    }
+#if defined(_M_X64)
+    const uintptr_t pc = static_cast<uintptr_t>(ctx->Rip);
+#elif defined(_M_ARM64)
+    const uintptr_t pc = static_cast<uintptr_t>(ctx->Pc);
+#else
+    const uintptr_t pc = 0;
+#endif
+    emitHeader(fd, "HUNG (watchdog: no frame progress)", 0, false, 0, pc, pc != 0);
+    uintptr_t frames[kMaxFrames];
+    const int frameCount = captureBacktraceWin(*ctx, frames, kMaxFrames);
+    for (int i = 0; i < frameCount; ++i) {
+        emitFrame(fd, i, frames[i]);
+    }
+    emitFooter(fd);
+}
+
+DWORD WINAPI watchdogThread(LPVOID) {
+    constexpr int kStallSeconds = 10;
+    LONG last = 0;
+    int stalls = 0;
+    bool seen = false;
+    for (;;) {
+        ::Sleep(1000);
+        const LONG now = g_heartbeat;
+        if (!seen) {
+            // don't arm until the game has pulsed at least once — skips the
+            // startup/first-load window entirely
+            if (g_heartbeatStarted == 0) {
+                continue;
+            }
+            seen = true;
+            last = now;
+            stalls = 0;
+            continue;
+        }
+        if (now != last) {
+            last = now;
+            stalls = 0;
+            continue;
+        }
+        if (++stalls < kStallSeconds) {
+            continue;
+        }
+        // kStallSeconds of consecutive no-progress reads — treat as hung. If a
+        // real exception handler already claimed g_inHandler, stand down.
+        if (InterlockedCompareExchange(&g_inHandler, 1, 0) != 0) {
+            return 0;
+        }
+        if (g_watchMainThread != nullptr) {
+            ::SuspendThread(g_watchMainThread);
+            CONTEXT ctx;
+            std::memset(&ctx, 0, sizeof(ctx));
+            ctx.ContextFlags = CONTEXT_FULL;
+            if (::GetThreadContext(g_watchMainThread, &ctx)) {
+                emitHang(kStderrFd, &ctx);
+                const int logFd = dusk::GetLogFileDescriptor();
+                if (logFd >= 0) {
+                    emitHang(logFd, &ctx);
+                    _commit(logFd);
+                }
+            }
+        }
+        ::TerminateProcess(::GetCurrentProcess(), 0xDEAD8A46);
+        return 0;
+    }
+}
+
+// ---- CRT fatal-exit handlers ---------------------------------------------
+// abort()/_purecall/_invalid_parameter/std::terminate do NOT raise an SEH
+// exception, so neither windowsHandler nor vectoredHandler ever sees them and
+// the process exits traceless. These handlers run synchronously on the failing
+// thread with the stack still intact, so a context captured here unwinds
+// straight through the offending call. Each emits the same symbolicated trace
+// as a crash, then ends the process.
+void emitCurrentTrace(const char* reason, const char* detail) {
     if (InterlockedCompareExchange(&g_inHandler, 1, 0) != 0) {
-        return EXCEPTION_CONTINUE_SEARCH;
+        return;  // a crash/hang report is already in flight
     }
-    emit(kStderrFd, ep);
+    CONTEXT ctx;
+    std::memset(&ctx, 0, sizeof(ctx));
+    RtlCaptureContext(&ctx);
+#if defined(_M_X64)
+    const uintptr_t pc = static_cast<uintptr_t>(ctx.Rip);
+#elif defined(_M_ARM64)
+    const uintptr_t pc = static_cast<uintptr_t>(ctx.Pc);
+#else
+    const uintptr_t pc = 0;
+#endif
+    uintptr_t frames[kMaxFrames];
+    const int frameCount = captureBacktraceWin(ctx, frames, kMaxFrames);
+    const int fds[2] = {kStderrFd, dusk::GetLogFileDescriptor()};
+    for (int f = 0; f < 2; ++f) {
+        const int fd = fds[f];
+        if (fd < 0) {
+            continue;
+        }
+        emitHeader(fd, reason, 0, false, 0, pc, pc != 0);
+        if (detail != nullptr) {
+            writeStr(fd, "Detail:      ");
+            writeStr(fd, detail);
+            writeStr(fd, "\n");
+        }
+        for (int i = 0; i < frameCount; ++i) {
+            emitFrame(fd, i, frames[i]);
+        }
+        emitFooter(fd);
+    }
     const int logFd = dusk::GetLogFileDescriptor();
     if (logFd >= 0) {
-        emit(logFd, ep);
         _commit(logFd);
     }
-    // a stack overflow is unrecoverable — end the process now that the trace is
-    // written, rather than letting it limp into undefined behavior
-    ::TerminateProcess(::GetCurrentProcess(), 0xDEAD57AC);
-    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void __cdecl purecallHandlerWin() {
+    emitCurrentTrace("PURE VIRTUAL CALL (_purecall)", nullptr);
+    ::TerminateProcess(::GetCurrentProcess(), 0xDEADBEE1);
+}
+
+void __cdecl invalidParamHandlerWin(const wchar_t*, const wchar_t*, const wchar_t*,
+    unsigned int, uintptr_t) {
+    emitCurrentTrace("INVALID CRT PARAMETER", nullptr);
+    ::TerminateProcess(::GetCurrentProcess(), 0xDEADBEE2);
+}
+
+void terminateHandlerWin() {
+    const char* detail = "uncaught exception";
+    if (std::exception_ptr ep = std::current_exception()) {
+        try {
+            std::rethrow_exception(ep);
+        } catch (const std::exception& e) {
+            detail = e.what();
+        } catch (...) {
+            detail = "non-std exception";
+        }
+    } else {
+        detail = "std::terminate with no active exception";
+    }
+    emitCurrentTrace("std::terminate", detail);
+    ::TerminateProcess(::GetCurrentProcess(), 0xDEADBEE3);
+}
+
+void abortSignalHandler(int) {
+    // abort() raises SIGABRT then, with no handler, _exit()s silently — a common
+    // traceless death path for SDK/CRT assertions. Capture the call stack here.
+    emitCurrentTrace("abort() / SIGABRT", nullptr);
+    ::TerminateProcess(::GetCurrentProcess(), 0xDEADBEE4);
 }
 
 #else
@@ -967,6 +1159,25 @@ void install() {
         SetThreadStackGuarantee(&stackGuarantee);
     }
     AddVectoredExceptionHandler(/*first*/ 1, &vectoredHandler);
+    // hang watchdog: capture a real (cross-thread-usable) handle to this thread
+    // — install() runs on the main game thread — and spin up the monitor. The
+    // pseudo-handle from GetCurrentThread() is only valid on the calling thread,
+    // so the watchdog needs a duplicated real handle to suspend/inspect it.
+    if (DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(),
+            &g_watchMainThread, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+        if (HANDLE wd = CreateThread(nullptr, 0, &watchdogThread, nullptr, 0, nullptr)) {
+            CloseHandle(wd);
+        }
+    }
+    // CRT fatal exits that don't raise an SEH exception (and so slip past both
+    // filters above) — route them through a synchronous trace + terminate.
+    _set_purecall_handler(&purecallHandlerWin);
+    _set_invalid_parameter_handler(&invalidParamHandlerWin);
+    std::set_terminate(&terminateHandlerWin);
+    // abort() otherwise pops a dialog / _exit()s with no trace; suppress the
+    // dialog and route SIGABRT through our trace path.
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    std::signal(SIGABRT, &abortSignalHandler);
 #elif !defined(__APPLE__) || !TARGET_OS_TV
     Dl_info moduleInfo;
     if (dladdr(reinterpret_cast<void*>(&install), &moduleInfo) != 0) {
@@ -996,6 +1207,15 @@ void install() {
     }
 
     g_prevTerminate = std::set_terminate(&onTerminate);
+#endif
+}
+
+void heartbeat() {
+#if defined(_WIN32)
+    InterlockedIncrement(&g_heartbeat);
+    if (g_heartbeatStarted == 0) {
+        InterlockedExchange(&g_heartbeatStarted, 1);
+    }
 #endif
 }
 

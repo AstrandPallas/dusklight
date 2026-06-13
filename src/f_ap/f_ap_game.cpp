@@ -16,6 +16,7 @@
 #include "d/d_tresure.h"
 #include "dusk/achievements.h"
 #include "dusk/coop/coop_manager.hpp"
+#include "dusk/crash_handler.h"
 #include "dusk/frame_interpolation.h"
 #include "dusk/livesplit.h"
 #include "dusk/logging.h"
@@ -744,6 +745,7 @@ static void fapGm_AfterRecord() {
 BOOL isRecording = false;
 
 static void duskExecute() {
+    dusk::crash_handler::heartbeat();  // hang-watchdog liveness pulse (once/frame)
     dusk::coop::tick();
     dusk::input::handleGamepadColor();
     updateAutoSave();

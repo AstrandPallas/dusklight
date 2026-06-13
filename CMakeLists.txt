@@ -387,7 +387,10 @@ endif ()
 
 if (WIN32)
     list(APPEND GAME_LIBS Ws2_32)
-    if (CMAKE_BUILD_TYPE STREQUAL Debug)
+    # in-process symbolication for the crash + hang-watchdog backtraces. Enabled
+    # for any build that ships debug info (Debug and RelWithDebInfo) so test
+    # builds resolve their own traces to function names instead of bare RVAs.
+    if (CMAKE_BUILD_TYPE STREQUAL Debug OR CMAKE_BUILD_TYPE STREQUAL RelWithDebInfo)
         list(APPEND GAME_LIBS dbghelp)
         list(APPEND GAME_COMPILE_DEFS DUSK_CRASH_DBGHELP=1)
     endif ()
