@@ -4603,6 +4603,21 @@ void daAlink_c::playerInit() {
     int startMode = getStartMode();
     int startEvent = getStartEvent();
 
+#if TARGET_PC
+    // coop: ONLY P1 authors the startup / scene-arrival event. A guest second
+    // ALINK is created with param 0, so startMode/startEvent above are 0 — not
+    // P1's real selection. Letting the guest run this chain overwrites the
+    // GLOBAL event selector (mException.mEventInfoIdx, via evmng_startDemo) and,
+    // together with the orderStartDemo() below, re-drives the single event
+    // manager on top of P1's in-flight startup event. That clobbers P1's
+    // scene-arrival walk-in demo (P1 slides, no walk animation) and, in some
+    // saves, re-resolves to the chained ending demo (demo31 -> sw_demo32 ->
+    // demo30 -> staff roll). Every other world-spawn op in create() is already
+    // !isGuest()-guarded; this is the one that was missed.
+    if (isGuest()) {
+        mStartEventID = -1;
+    } else
+#endif
     if (dComIfGp_getStartStagePoint() == -2 || dComIfGp_getStartStagePoint() == -3) {
         mStartEventID = dComIfGp_evmng_startDemo(-1);
     } else if (dComIfGp_getStartStagePoint() == -4) {
@@ -4643,6 +4658,10 @@ void daAlink_c::playerInit() {
         }
     }
 
+#if TARGET_PC
+    // coop: a guest must not re-issue the startup event on the global manager
+    if (!isGuest())
+#endif
     dComIfGp_getPEvtManager()->orderStartDemo();
     field_0x2f94 = -1;
     field_0x2f95 = -1;
