@@ -30,6 +30,7 @@
 
 #if TARGET_PC
 #include "dusk/coop.h"
+#include "dusk/coop_game.h"
 #include "dusk/frame_interpolation.h"
 #include "dusk/logging.h"
 #include "dusk/action_bindings.h"
@@ -11701,7 +11702,15 @@ static int init_phase2(camera_class* i_this) {
 
         OS_REPORT("\ncamera: Warning: give up to get floor info !!\n\n");
 #else
-        return cPhs_INIT_e;
+        // coop: a guest camera created right after a loading zone can come up a
+        // frame or two before the stage collision under P2 is ready. The release
+        // build retried this floor probe FOREVER, so camera 1's init_phase2 never
+        // finished — windowNum never rose to 2 and P2's half stayed black until a
+        // pause-menu toggle (whose snapGuestToP1 dropped P2 back onto solid
+        // floor). Mirror the DEBUG give-up: retry briefly, then proceed anyway.
+        if (i_this->field_0x238 < 100) {
+            return cPhs_INIT_e;
+        }
 #endif
     }
 
@@ -11753,6 +11762,13 @@ static int init_phase2(camera_class* i_this) {
 #endif
 
     camera->mCamera.field_0xb0c = 1;
+#if TARGET_PC
+    // coop: body built + view set up — tell the manager this guest camera is
+    // safe to re-engage the split onto (covers a scene-fade clobbering windowNum)
+    if (camera_id > 0) {
+        dusk::coop::markGuestCameraReady(camera_id);
+    }
+#endif
     if (body->CameraID() == 0) {
 #if DEBUG
         dDbgCamera.Init(body);

@@ -13,4 +13,9 @@ namespace dusk::coop {
 // returns P1 immediately (solo cost: one slot read).
 fopAc_ac_c* nearestPlayer(const cXyz& i_pos);
 
+// Called from camera init_phase2 when a guest camera (index 1..3) is fully
+// built; lets the manager safely re-assert the split if a scene-fade clobbered
+// the window count after the camera came up.
+void markGuestCameraReady(int cameraIdx);
+
 }  // namespace dusk::coop

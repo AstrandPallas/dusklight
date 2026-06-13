@@ -26,6 +26,13 @@ static State s_state = State::Disabled;
 // semantics. playerCount() therefore counts a guest from request onward.
 static unsigned int s_guestProcID[kMaxPlayers - 1] = {kNoProcID, kNoProcID, kNoProcID};
 static unsigned int s_guestActorID[kMaxPlayers - 1] = {kNoProcID, kNoProcID, kNoProcID};
+// True once a guest camera's init_phase2 has fully completed (body constructed,
+// view set up). Lets tick() safely re-assert the split — a guest camera that
+// inits mid scene-fade raises windowNum to 2, but the fade lowers it back to 1
+// each frame and init_phase2 won't re-raise, so P2's half stays black until this
+// re-assert kicks in. Cleared on teardown so we never force a window onto a
+// camera whose body isn't built yet (that crashes).
+static bool s_guestCamInitDone[kMaxPlayers - 1] = {false, false, false};
 
 // Set when a scene change deletes the guest out from under us — the manager
 // respawns it automatically once P1 fully exists again and no stash context
@@ -214,6 +221,13 @@ fopAc_ac_c* nearestPlayer(const cXyz& i_pos) {
     return best;
 }
 
+// Called from camera init_phase2 once a guest camera (index 1..3) is fully built.
+void markGuestCameraReady(int cameraIdx) {
+    if (cameraIdx >= 1 && cameraIdx < kMaxPlayers) {
+        s_guestCamInitDone[cameraIdx - 1] = true;
+    }
+}
+
 // playerNo 1..3; v1 only uses 1.
 // NULL while the guest is despawned OR still in its multi-frame create phase
 // (fopAcM_SearchByID reports creating processes as found-but-NULL).
@@ -390,6 +404,9 @@ static void despawnGuest(int playerNo) {
     // deliberate removal (hold-START leave, coop disable) cancels any pending
     // auto-rejoin
     s_wantRejoin = false;
+    if (playerNo >= 1 && playerNo < kMaxPlayers) {
+        s_guestCamInitDone[playerNo - 1] = false;
+    }
     if (s_guestActorID[playerNo - 1] != kNoProcID) {
         // free the attention instance only once the actor (whose cached
         // mAttention points at it) is truly gone
@@ -453,6 +470,7 @@ void tick() {
         scheduleAttnReap(1, s_guestActorID[0]);  // actor already gone -> fires next tick
         s_guestActorID[0] = kNoProcID;
         s_guestProcID[0] = kNoProcID;
+        s_guestCamInitDone[0] = false;
         teardownCamera(1);
         dComIfGp_setCameraInfo(1, NULL, 1, 1, -1);
         applySplitLayout(1, /*forceNum*/ true);
@@ -503,6 +521,18 @@ void tick() {
             s_state = State::Stashed;
             DuskLog.info("coop: P2 stashed");
         } else {
+            // coop: re-engage the split if the scene-fade clobbered it. A guest
+            // camera that finished init_phase2 mid-fade raised windowNum to 2,
+            // but the fade lowered it back and init_phase2 won't re-raise — so
+            // P2's half stays black (single window) until forced. Only do this
+            // once the camera's body is actually built (s_guestCamInitDone),
+            // never on a process that's still mid-init (that crashes), and only
+            // here in normal play — never during a stash/cutscene/menu.
+            if (s_guestCamInitDone[0] && getGuestActor(1) != NULL &&
+                dComIfGp_getWindowNum() < 2) {
+                applySplitLayout(2, /*forceNum*/ true);
+            }
+
             // distance/fall recovery: a guest that fell behind a loading gap
             // or off a cliff P1 already crossed gets teleported back.
             fopAc_ac_c* guest = getGuestActor(1);
