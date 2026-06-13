@@ -1031,6 +1031,12 @@ static void drawDepth_blurTex(TGXTexObj &dst) {
 static void drawDepth2(view_class* param_0, view_port_class* param_1, int param_2) {
     ZoneScoped;
     static GXColorS10 l_tevColor0 = {0, 0, 0, 0};
+#if TARGET_PC
+    // coop: P1 (slot 0) keeps smoothing into the shared env-light accumulator
+    // (vanilla); guests need their own slots so two windows drawing in the same
+    // frame don't ping-pong a single global focus value and jitter both halves.
+    static f32 s_coopDofFocus[dusk::coop::kMaxPlayers] = {-255.0f, -255.0f, -255.0f, -255.0f};
+#endif
 
     if (daPy_getLinkPlayerActorClass() != NULL) {
         u8 sp8 = 1;
@@ -1054,16 +1060,30 @@ static void drawDepth2(view_class* param_0, view_port_class* param_1, int param_
                 param_2 = cLib_minMaxLimit<int>(param_2, -0x400, 0);
             }
 
-            fopAc_ac_c* player_p = dComIfGp_getPlayer(0);
-            camera_class* camera_p = (camera_class*)dComIfGp_getCamera(0);
+            // coop: in split this runs once per window — resolve which player owns
+            // the window being drawn so focus distance, camera and lock-on come from
+            // that player rather than always P1. Camera index == player index in
+            // this engine (see dComIfGp_setCameraInfo callers in d_s_play/coop).
+            int pno = 0;
+#if TARGET_PC
+            if (dusk::coop::isSplitActive()) {
+                dDlst_window_c* dof_win = dComIfGp_getCurrentWindow();
+                if (dof_win != NULL) {
+                    pno = dof_win->getCameraID();
+                }
+            }
+#endif
+
+            fopAc_ac_c* player_p = dComIfGp_getPlayer(pno);
+            camera_class* camera_p = (camera_class*)dComIfGp_getCamera(pno);
             f32 var_f31;
             f32 var_f29;
             f32 var_f28 = -255.0f;
 
             if (dCam_getBody()->Mode() != 4 && dCam_getBody()->Mode() != 7) {
-                int cam_id = dComIfGp_getPlayerCameraID(0);
+                int cam_id = dComIfGp_getPlayerCameraID(pno);
                 camera_process_class* temp_r4 = dComIfGp_getCamera(cam_id);
-                dAttention_c* attention = dComIfGp_getAttention();
+                dAttention_c* attention = dComIfGp_getAttention(pno);
 
                 f32 var_f30;
                 if (temp_r4 != NULL) {
@@ -1074,8 +1094,9 @@ static void drawDepth2(view_class* param_0, view_port_class* param_1, int param_
                 var_f30 = 60.0f / var_f30;
 
                 if (attention->LockonTruth()) {
-                    fopAc_ac_c* atn_actor =
-                        fopAcM_SearchByID(daPy_getLinkPlayerActorClass()->getAtnActorID());
+                    daPy_py_c* dof_link = (daPy_py_c*)dComIfGp_getPlayer(pno);
+                    fopAc_ac_c* atn_actor = dof_link != NULL ?
+                        fopAcM_SearchByID(dof_link->getAtnActorID()) : NULL;
 
                     if (atn_actor != NULL) {
                         cXyz sp28;
@@ -1109,8 +1130,14 @@ static void drawDepth2(view_class* param_0, view_port_class* param_1, int param_
                 }
             }
 
-            cLib_addCalc(&g_env_light.field_0x1264, var_f28, SREG_F(5) + 0.1f, SREG_F(4) + 100.0f, 0.0001f);
-            l_tevColor0.a = g_env_light.field_0x1264;
+            f32* focus_accum = &g_env_light.field_0x1264;
+#if TARGET_PC
+            if (pno > 0 && pno < dusk::coop::kMaxPlayers) {
+                focus_accum = &s_coopDofFocus[pno];
+            }
+#endif
+            cLib_addCalc(focus_accum, var_f28, SREG_F(5) + 0.1f, SREG_F(4) + 100.0f, 0.0001f);
+            l_tevColor0.a = *focus_accum;
             if (l_tevColor0.a <= -254) {
                 l_tevColor0.a = -255;
             }
@@ -2503,10 +2530,10 @@ int mDoGph_Painter() {
                 fapGm_HIO_c::startCpuTimer();
                 #endif
 
-                // coop: full-FB capture/composite pass — window 0 only while split
-                if (!coopSplit || wnd == 0) {
-                    GX_DEBUG_GROUP(drawDepth2, &camera_p->view, view_port, dComIfGp_getCameraZoomForcus(camera_id));
-                }
+                // coop: DoF capture is viewport-scoped (param_1) and the focus
+                // distance is now resolved per-window inside drawDepth2, so run it
+                // for every window — each half gets its own player's focus.
+                GX_DEBUG_GROUP(drawDepth2, &camera_p->view, view_port, dComIfGp_getCameraZoomForcus(camera_id));
                 GXInvalidateTexAll();
                 GXSetClipMode(GX_CLIP_ENABLE);
 
@@ -2683,10 +2710,12 @@ int mDoGph_Painter() {
                 fapGm_HIO_c::startCpuTimer();
                 #endif
 
-                // coop: full-FB capture/composite pass — window 0 only while split
-                // TODO(coop v2): consider running bloom once for the final window
-                // so the whole split frame is post-processed
-                if (!coopSplit || wnd == 0) {
+                // coop: bloom is a full-frame pyramid (not viewport-scoped) and its
+                // composite obeys the active scissor — so per-window here it would
+                // only ever land on one half. Solo runs it inline as usual; split
+                // defers a single full-frame pass to the last-window tail block
+                // below, after both halves' 3D is complete.
+                if (!coopSplit) {
                     GX_DEBUG_GROUP(mDoGph_gInf_c::getBloom()->draw);
                 }
                 j3dSys.setViewMtx(camera_p->view.viewMtx);
@@ -2718,6 +2747,17 @@ int mDoGph_Painter() {
                 // state, so they must only run on the LAST window (drawn over
                 // the final window's 3D content).
                 if (!coopSplit || wnd == dComIfGp_getWindowNum() - 1) {
+                    // coop: single full-frame bloom over the finished split frame.
+                    // Both windows' 3D (incl. 3D-last/saturation) is now in the FB,
+                    // so both halves bloom symmetrically. Open the scissor to the
+                    // whole frame for the composite (bloom otherwise clips to the
+                    // last window's half). The blur kernel bleeds a few px across the
+                    // split seam — acceptable for v2; deferred motion blur is separate.
+                    if (coopSplit) {
+                        GXSetScissor(0, 0, mDoGph_gInf_c::getWidth(), mDoGph_gInf_c::getHeight());
+                        GX_DEBUG_GROUP(mDoGph_gInf_c::getBloom()->draw);
+                    }
+
                     if (fapGmHIO_getParticle()) {
                         #if WIDESCREEN_SUPPORT
                         if (mDoGph_gInf_c::isWideZoom()) {
