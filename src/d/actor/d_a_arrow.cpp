@@ -282,7 +282,7 @@ void daArrow_c::arrowShooting() {
     if (mArrowType == 4) {
         current.angle.x = -link->getBodyAngleX();
         current.angle.y = link->shape_angle.y + link->getBodyAngleY();
-    } else if (dComIfGp_checkPlayerStatus0(0, 0x200000) || fopAcM_GetParam(this) == 2)  {
+    } else if (dComIfGp_checkPlayerStatus0(link->getPlayerNo(), 0x200000) || fopAcM_GetParam(this) == 2)  {
         cXyz* pos = link->checkBowCameraArrowPosP(&shape_angle.x, &shape_angle.y);
         if (pos != NULL) {
             current.pos = *pos;
@@ -548,7 +548,7 @@ int daArrow_c::procWait() {
         mSoundObjArrow.startLevelSound(Z2SE_OBJ_BOMB_IGNITION, 0, mReverb);
     }
 
-    if(dComIfGp_checkCameraAttentionStatus(dComIfGp_getPlayerCameraID(0), 2)) {
+    if(dComIfGp_checkCameraAttentionStatus(dComIfGp_getPlayerCameraID(ARROW_OWNER()->getPlayerNo()), 2)) {
         field_0x942 = 3;
     } else {
         field_0x942 = 0;

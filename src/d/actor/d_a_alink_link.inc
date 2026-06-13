@@ -17,19 +17,33 @@
 #endif
 
 bool daAlink_c::checkNoSubjectModeCamera() {
-    return dCam_getBody()->Type() == dCam_getBody()->GetCameraTypeFromCameraName("Rotary") ||
-           dCam_getBody()->Type() == dCam_getBody()->GetCameraTypeFromCameraName("Rampart2") ||
-           dCam_getBody()->Type() == dCam_getBody()->GetCameraTypeFromCameraName("Allay") ||
-           dCam_getBody()->Type() == dCam_getBody()->GetCameraTypeFromCameraName("AllayR") ||
-           dCam_getBody()->Type() == dCam_getBody()->GetCameraTypeFromCameraName("AllayR2") ||
-           dCam_getBody()->Type() == dCam_getBody()->GetCameraTypeFromCameraName("AllayS") ||
+#if TARGET_PC
+    // coop: gate on THIS player's camera body so P2 can enter/leave subjective
+    // aim independently. coopCamera() resolves to camera 0 for P1/solo, so this
+    // is byte-identical to dCam_getBody() there.
+    dCamera_c* body = &coopCamera()->mCamera;
+#else
+    dCamera_c* body = dCam_getBody();
+#endif
+    return body->Type() == body->GetCameraTypeFromCameraName("Rotary") ||
+           body->Type() == body->GetCameraTypeFromCameraName("Rampart2") ||
+           body->Type() == body->GetCameraTypeFromCameraName("Allay") ||
+           body->Type() == body->GetCameraTypeFromCameraName("AllayR") ||
+           body->Type() == body->GetCameraTypeFromCameraName("AllayR2") ||
+           body->Type() == body->GetCameraTypeFromCameraName("AllayS") ||
            checkCargoCarry() ||
-           dCam_getBody()->Type() == dCam_getBody()->GetCameraTypeFromCameraName("StreetP") ||
-           dCam_getBody()->Type() == dCam_getBody()->GetCameraTypeFromCameraName("Street");
+           body->Type() == body->GetCameraTypeFromCameraName("StreetP") ||
+           body->Type() == body->GetCameraTypeFromCameraName("Street");
 }
 
 bool daAlink_c::acceptSubjectModeChange() {
-    return dCam_getBody()->ChangeModeOK(4) &&
+#if TARGET_PC
+    // coop: per-player camera body (see checkNoSubjectModeCamera)
+    dCamera_c* body = &coopCamera()->mCamera;
+#else
+    dCamera_c* body = dCam_getBody();
+#endif
+    return body->ChangeModeOK(4) &&
            !checkNoSubjectModeCamera() &&
            !checkAttentionLock() &&
            !checkHorseLieAnime() &&

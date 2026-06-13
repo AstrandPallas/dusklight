@@ -492,7 +492,7 @@ int daBoomerang_c::draw() {
         g_env_light.setLightTevColorType_MAJI(mp_shippuModel, &tevStr);
         mDoExt_modelEntryDL(mp_shippuModel);
         daMirror_c::entry(mp_shippuModel);
-    } else if (dComIfGp_checkPlayerStatus0(0, 0x80000)) {
+    } else if (dComIfGp_checkPlayerStatus0(BOOM_OWNER()->getPlayerNo(), 0x80000)) {
         g_env_light.setLightTevColorType_MAJI(mp_setboomEfModel, &tevStr);
         mDoExt_modelUpdateDL(mp_setboomEfModel);
     }
@@ -879,7 +879,7 @@ void daBoomerang_c::setEffect() {
         m_windAtCyl.SetH(wind_cyl_height);
     }
 
-    if (dComIfGp_checkPlayerStatus0(0, 0x80000) && fopAcM_GetParam(this) == 0) {
+    if (dComIfGp_checkPlayerStatus0(BOOM_OWNER()->getPlayerNo(), 0x80000) && fopAcM_GetParam(this) == 0) {
         setEffectTraceMatrix(&field_0x968, 0x740);
     } else {
         JPABaseEmitter* emitter = dComIfGp_particle_getEmitter(field_0x968);
@@ -891,6 +891,13 @@ void daBoomerang_c::setEffect() {
 
 int daBoomerang_c::procWait() {
     daAlink_c* player = BOOM_OWNER();
+    // coop: boomerang aim state (status 0x80000) and the aim camera belong to
+    // whoever threw it — read the owner's player slot/camera, not P1 (slot 0).
+    int onr = player->getPlayerNo();
+    camera_process_class* ownerCam = dComIfGp_getCamera(dComIfGp_getPlayerCameraID(onr));
+    if (ownerCam == NULL) {
+        ownerCam = dComIfGp_getCamera(0);
+    }
     speedF = 0.0f;
     setKeepMatrix();
 
@@ -947,8 +954,8 @@ int daBoomerang_c::procWait() {
         field_0x962 = player->getBoomBgThroughTime();
 
         procMove();
-    } else if (dCam_getBody()->Mode() != 8) {
-        if (dComIfGp_checkPlayerStatus0(0, 0x80000) && player->getAtnActor() != NULL && m_lockCnt < BOOMERANG_LOCK_MAX) {
+    } else if (ownerCam->mCamera.Mode() != 8) {
+        if (dComIfGp_checkPlayerStatus0(onr, 0x80000) && player->getAtnActor() != NULL && m_lockCnt < BOOMERANG_LOCK_MAX) {
             fpc_ProcID atn_actor_id = (fpc_ProcID)fopAcM_GetID(player->getAtnActor());
             
             int var_r27 = 0;
@@ -967,7 +974,7 @@ int daBoomerang_c::procWait() {
                 mDoAud_seStart(l_lockSeFlg[m_lockCnt], NULL, 0, 0);
                 m_lockCnt++;
             }
-        } else if (!dComIfGp_checkPlayerStatus0(0, 0x80000)) {
+        } else if (!dComIfGp_checkPlayerStatus0(onr, 0x80000)) {
             resetLockActor();
         }
 
@@ -1003,7 +1010,7 @@ int daBoomerang_c::procWait() {
             field_0x6d8 = lock_line_actor;
         }
     
-        camera_process_class* camera = dComIfGp_getCamera(dComIfGp_getPlayerCameraID(0));
+        camera_process_class* camera = ownerCam;
         f32 cps_size;
         if (field_0x6d8 != NULL) {
             cps_size = 30.0f;
@@ -1032,7 +1039,7 @@ int daBoomerang_c::procWait() {
         m_lockLineActorID = fpcM_ERROR_PROCESS_ID_e;
     }
 
-    if (dComIfGp_checkPlayerStatus0(0, 0x80000)) {
+    if (dComIfGp_checkPlayerStatus0(onr, 0x80000)) {
         m_sound.startLevelSound(Z2SE_BOOM_POWER_RESUME, 0, -1);
     }
 
@@ -1271,7 +1278,11 @@ int daBoomerang_c::execute() {
         field_0x962--;
     }
 
-    camera_process_class* camera = dComIfGp_getCamera(dComIfGp_getPlayerCameraID(0));
+    // coop: aim angles come from the throwing player's camera, not P1's
+    camera_process_class* camera = dComIfGp_getCamera(dComIfGp_getPlayerCameraID(BOOM_OWNER()->getPlayerNo()));
+    if (camera == NULL) {
+        camera = dComIfGp_getCamera(0);
+    }
     s16 cam_angleY = fopCamM_GetAngleY(camera);
     s16 cam_angleX = fopCamM_GetAngleX(camera);
 
