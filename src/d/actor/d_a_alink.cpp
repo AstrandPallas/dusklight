@@ -4953,9 +4953,17 @@ int daAlink_c::create() {
 
         if (
 #if TARGET_PC
-            // guests must not run dComIfGs_Wolf_Change_Check() (story-state
-            // read/write) — they always fall through to the plain branches
-            !isGuest() &&
+            // coop: guests inherit P1's CURRENT form at spawn. They must not run
+            // dComIfGs_Wolf_Change_Check() (it reads/writes P1 story save state),
+            // so read P1's live wolf flag directly instead. Covers joining while
+            // P1 is a wolf and rejoining after the transform cutscene (guests are
+            // stashed through it). Wrapped in a ternary so the guest term sits
+            // outside the !isGuest() short-circuit.
+            (isGuest()
+                 ? (daAlink_getAlinkActorClass() != NULL &&
+                    daAlink_getAlinkActorClass() != this &&
+                    daAlink_getAlinkActorClass()->checkWolf())
+                 :
 #endif
             ((
                 (
@@ -4975,6 +4983,9 @@ int daAlink_c::create() {
             )
             || sceneMode == 9
             ))
+#if TARGET_PC
+            )
+#endif
         {
             attention_info.position.set(current.pos.x + cM_ssin(shape_angle.y) * 70.0f,
                                          current.pos.y + 80.0f,

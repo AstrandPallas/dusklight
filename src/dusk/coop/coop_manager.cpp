@@ -508,11 +508,27 @@ void tick() {
             fopAc_ac_c* guest = getGuestActor(1);
             daPy_py_c* p1 = daPy_getPlayerActorClass();
             if (guest != NULL && p1 != NULL) {
-                f32 distXZSq = guest->current.pos.abs2XZ(p1->current.pos);
-                f32 yDrop = p1->current.pos.y - guest->current.pos.y;
-                if (distXZSq > kRecoverDistXZ * kRecoverDistXZ || yDrop > kRecoverDrop) {
-                    snapGuestToP1(guest, 1);
-                    DuskLog.info("coop: P2 recovered to P1");
+                // coop: P2 follows P1's form. If P1 changed form while P2 was
+                // active in the same scene (quick-transform, or a stash/restore
+                // spanning a story transform), rebuild the guest in the new form
+                // via the proven create path — despawn + auto-rejoin, where
+                // spawnGuest re-reads P1's current form — rather than a live
+                // mid-game model/heap swap (changeWolf allocates a full wolf +
+                // wolf-Midna model set into the instance heap).
+                bool p1Wolf = p1->checkWolf() != 0;
+                bool guestWolf = ((daPy_py_c*)guest)->checkWolf() != 0;
+                if (p1Wolf != guestWolf) {
+                    despawnGuest(1);
+                    s_wantRejoin = true;  // despawnGuest cleared it; re-arm
+                    s_rejoinWaitFrames = 0;
+                    DuskLog.info("coop: P2 re-forming to match P1");
+                } else {
+                    f32 distXZSq = guest->current.pos.abs2XZ(p1->current.pos);
+                    f32 yDrop = p1->current.pos.y - guest->current.pos.y;
+                    if (distXZSq > kRecoverDistXZ * kRecoverDistXZ || yDrop > kRecoverDrop) {
+                        snapGuestToP1(guest, 1);
+                        DuskLog.info("coop: P2 recovered to P1");
+                    }
                 }
             }
         }
