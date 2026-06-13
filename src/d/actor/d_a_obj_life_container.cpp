@@ -55,7 +55,15 @@ static void lifeGetTgCallBack(fopAc_ac_c* i_tgActor, dCcD_GObjInf* i_tgObjInf,
 
 static void lifeGetCoCallBack(fopAc_ac_c* i_coActorA, dCcD_GObjInf* i_coObjInfA,
                               fopAc_ac_c* i_coActorB, dCcD_GObjInf* i_coObjInfB) {
-    if (i_coActorA != NULL && i_coActorB != NULL && i_coActorB == (fopAc_ac_c*)dComIfGp_getLinkPlayer()) {
+    if (i_coActorA != NULL && i_coActorB != NULL &&
+#if TARGET_PC
+        // coop: either Link collects it — match by actor type (both are ALINK)
+        // instead of the P1-only instance pointer, like the rupee/key pickups
+        fopAcM_GetName(i_coActorB) == fopAcM_GetName(dComIfGp_getLinkPlayer())
+#else
+        i_coActorB == (fopAc_ac_c*)dComIfGp_getLinkPlayer()
+#endif
+    ) {
         if (!daPy_getPlayerActorClass()->checkCanoeRide()) {
             ((daObjLife_c*)i_coActorA)->initActionOrderGetDemo();
         }
@@ -271,9 +279,14 @@ int daObjLife_c::actionWait() {
     }
 
     if (!daPy_getPlayerActorClass()->checkCanoeRide() && mCcCyl.ChkCoHit()) {
-        daPy_py_c* player = daPy_getPlayerActorClass();
         fopAc_ac_c* hit_actor = mCcCyl.GetCoHitAc();
-        if (player == hit_actor) {
+#if TARGET_PC
+        // coop: either Link's touch collects it
+        if (hit_actor != NULL &&
+            fopAcM_GetName(hit_actor) == fopAcM_GetName(dComIfGp_getLinkPlayer())) {
+#else
+        if (daPy_getPlayerActorClass() == hit_actor) {
+#endif
             initActionOrderGetDemo();
         }
     }

@@ -7,6 +7,9 @@
 #include "d/d_path.h"
 #include "d/d_bg_w.h"
 #include "f_op/f_op_camera_mng.h"
+#if TARGET_PC
+#include "dusk/coop_game.h"
+#endif
 #include "SSystem/SComponent/c_math.h"
 #include "Z2AudioLib/Z2Instances.h"
 #include <cmath>
@@ -535,7 +538,13 @@ void daTbox_c::initAnm() {
 }
 
 int daTbox_c::boxCheck() {
+#if TARGET_PC
+    // coop: whichever Link stands at the chest can open it; the open demo itself
+    // still runs through the event system on P1
+    daPy_py_c* player = (daPy_py_c*)dusk::coop::nearestPlayer(current.pos);
+#else
     daPy_py_c* player = (daPy_py_c*)dComIfGp_getPlayer(0);
+#endif
     if (!strcmp(dComIfGp_getStartStageName(), "R_SP01") && fopAcM_GetRoomNo(this) == 7 &&
                                                            player->getKandelaarFlamePos() == NULL) {
         return false;
