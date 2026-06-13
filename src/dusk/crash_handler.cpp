@@ -492,6 +492,10 @@ LONG WINAPI windowsHandler(EXCEPTION_POINTERS* ep) {
     const int logFd = dusk::GetLogFileDescriptor();
     if (logFd >= 0) {
         emit(logFd, ep);
+        // flush — the process is about to die, and an unflushed crash report is
+        // lost (the POSIX handler fsyncs; this Windows path never did, which is
+        // why crashes left no trace in the log)
+        _commit(logFd);
     }
     if (g_prevFilter != nullptr) {
         return g_prevFilter(ep);
