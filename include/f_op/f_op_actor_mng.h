@@ -724,13 +724,21 @@ fopAc_ac_c* nearestPlayer(const cXyz& i_pos);  // defined via dusk/coop_game.h
 }
 #endif
 
-// coop: target chooser for the player-relative helpers below. Enemies (and
-// anything else measuring distance/angle "to the player") acquire the nearest
-// live player instead of always P1; outside active split co-op this is P1, so
-// solo behavior is unchanged.
+// coop: target chooser for the player-relative helpers below.
+//   - ENEMY-group actors acquire the nearest live player, so P2 draws aggro and
+//     takes ranged/melee attention like P1.
+//   - everything else (NPCs, story/event triggers, gates, doors, objects)
+//     resolves to P1, the story authority. This is the crucial half: a guest who
+//     walks ahead of P1 must NOT set off NPC talks, area events or forced
+//     cutscenes out of order — doing so runs story events without their
+//     prerequisites and recurses the single-track event system.
+// Outside active split co-op nearestPlayer() is P1, so solo is unchanged.
 inline fopAc_ac_c* fopAcM_searchPlayerTarget(const fopAc_ac_c* actor) {
 #if TARGET_PC
-    return dusk::coop::nearestPlayer(actor->current.pos);
+    if (actor != nullptr && fopAcM_GetGroup(actor) == fopAc_ENEMY_e) {
+        return dusk::coop::nearestPlayer(actor->current.pos);
+    }
+    return dComIfGp_getPlayer(0);
 #else
     return dComIfGp_getPlayer(0);
 #endif
