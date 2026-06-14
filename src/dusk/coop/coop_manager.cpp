@@ -70,6 +70,10 @@ static int s_rejoinWaitFrames = 0;
 static constexpr int kEventSettleFrames = 12;
 static int s_eventSettleFrames = 0;
 
+// coop: grace window (frames) that keeps P2 from being evicted in the tail of an
+// NPC conversation, after P1 leaves PROC_TALK but while the talk event lingers.
+static constexpr int kTalkGraceFrames = 30;
+
 // Per-player Z-targeting: slot [n] is player n+1's dAttention_c (P1's lives
 // embedded in dComIfG_play_c). Created at join REQUEST time — before the
 // guest actor's create phase caches dComIfGp_getAttention(mPlayerNo) and
@@ -173,6 +177,34 @@ static bool shouldStash() {
     if (dDemo_c::m_object != NULL && dDemo_c::getCamera() != NULL) return true;
     daPy_py_c* p1 = daPy_getPlayerActorClass();
     if (p1 != NULL && p1->checkRide()) return true;
+    return false;
+}
+
+// coop: P1 is in (or just finishing) an NPC conversation. Talk trips
+// event_runCheck() the same as a heavy demo, but it is harmless with a guest
+// present — the NPC's look-at and the dialogue both resolve to P1 (the
+// searchPlayerTarget split keeps NPCs off the guest), so there is no reason to
+// despawn P2. The story-event eviction skips this case and leaves P2 standing
+// there, as it did before co-op touched it.
+//
+// The conversation's event lingers a few frames past PROC_TALK (the NPC's
+// wind-down), so a bare PROC_TALK check despawned + respawned P2 in that tail.
+// A short grace, refreshed every frame P1 is actually in PROC_TALK and counted
+// down only while we're polling (event running + guest present), rides out the
+// tail without a flicker. If a genuinely heavy event follows the talk, the grace
+// just delays P2's eviction by a fraction of a second — harmless now that the
+// real crashes are fixed.
+static int s_talkGrace = 0;
+static bool p1IsTalking() {
+    daAlink_c* p1 = (daAlink_c*)daPy_getPlayerActorClass();
+    if (p1 != NULL && p1->mProcID == daAlink_c::PROC_TALK) {
+        s_talkGrace = kTalkGraceFrames;
+        return true;
+    }
+    if (s_talkGrace > 0) {
+        s_talkGrace--;
+        return true;
+    }
     return false;
 }
 
@@ -544,7 +576,7 @@ void tick() {
         if (holdFrames > 60 && getGuestActor(1) != NULL) {
             despawnGuest(1);
             holdFrames = 0;
-        } else if (dComIfGp_event_runCheck() && getGuestActor(1) != NULL) {
+        } else if (dComIfGp_event_runCheck() && getGuestActor(1) != NULL && !p1IsTalking()) {
             // coop: story-event eviction. A forced cutscene (first-twilight
             // demo38) isn't a dDemo-with-camera, so shouldStash() misses it, and
             // a second Link present while the single-track event system runs
