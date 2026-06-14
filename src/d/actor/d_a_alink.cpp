@@ -11559,6 +11559,10 @@ void daAlink_c::orderPeep() {
     mPeepExitID = ((kytag05_class*)field_0x27f4)->getSceneListID();
     field_0x2ff2 = AREG_S(4) + 20;
 
+#if TARGET_PC
+    // coop: P1-only event — a guest-bound event freezes P1 when the guest is evicted
+    if (!isGuest())
+#endif
     fopAcM_orderOtherEvent(this, field_0x27f4, l_peepEventName, 0xFFFF, 1, 0);
 
     if (checkWolf()) {
@@ -11584,6 +11588,13 @@ int daAlink_c::orderTalk(int i_checkZTalk) {
         )
         && talkTrigger())
     {
+#if TARGET_PC
+        // coop: only P1 drives NPC/object talk events. A guest ordering one binds
+        // the event to itself; when the coop manager later evicts the guest the
+        // single-track event manager waits forever on the despawned actor and P1
+        // freezes. Keep the return so the guest still consumes the press.
+        if (!isGuest())
+#endif
         fopAcM_orderTalkEvent(this, field_0x27f4, 0, 0);
         return 1;
     }
@@ -11592,9 +11603,13 @@ int daAlink_c::orderTalk(int i_checkZTalk) {
         for (int i = 0; i < 2; i++) {
             // check if pressed X or Y and if item on button is a trade item
             if (checkTradeItem(dComIfGp_getSelectItem(i)) && itemTriggerCheck(1 << i)) {
+#if TARGET_PC
+                if (!isGuest())  // coop: P1-only talk event (see orderTalkEvent above)
+#endif
                 fopAcM_orderTalkItemBtnEvent(itemTalkType[i], this, field_0x27f8, 0, 0);
                 return 1;
             }
+
         }
     }
 
@@ -11651,6 +11666,9 @@ int daAlink_c::orderZTalk() {
         if (midnaTalkTrigger()
 #if DEBUG
             && (!mDoCPd_c::getHoldL(mPlayerNo) || !mDoCPd_c::getHoldR(mPlayerNo))
+#endif
+#if TARGET_PC
+            && !isGuest()  // coop: Z-talk (Midna / hint) is P1-authoritative only
 #endif
            )
         {
@@ -11762,10 +11780,20 @@ int daAlink_c::checkNormalAction() {
                 if (!checkStageName("F_SP103") ||
                     !fopAcIt_Judge((fopAcIt_JudgeFunc)daAlink_searchBouDoor, NULL))
                 {
+#if TARGET_PC
+                    // coop: P1-only door event — a guest-bound door/loading-zone
+                    // event freezes P1 when the guest is evicted
+                    if (!isGuest())
+#endif
                     fopAcM_orderDoorEvent(this, field_0x27f4, 0, 0);
                 }
                 checkWaitAction();
             } else {
+#if TARGET_PC
+                // coop: P1 opens chests — a guest-bound item-get event freezes P1
+                // when the guest is evicted (P1-opens-chests design decision)
+                if (!isGuest())
+#endif
                 fopAcM_orderTreasureEvent(this, field_0x27f4, 0, 0);
             }
 
@@ -14026,18 +14054,31 @@ int daAlink_c::checkSceneChange(int i_exitID) {
 
                     if (mExitDirection != 0xFF) {
                         field_0x2f58 = dPath_GetRoomPath(mExitDirection, fopAcM_GetRoomNo(this));
+                        // fix: restart the exit-path point index for the new path.
+                        // getSceneExitMoveAngle() walks field_0x2fc2 along this
+                        // path; a stale index left from a prior exit makes it return
+                        // early with no heading, so Link slides out without a walk.
+                        field_0x2fc2 = 0;
                     }
                 } else {
                     isScnChange = dStage_changeSceneExitId(mLinkAcch.m_gnd, exit_speed, exit_mode,
                                                            (int)fopAcM_GetRoomNo(this), shape_angle.y);
                     field_0x2f58 = dPath_GetRoomPath(dComIfG_Bgsp().GetRoomPathId(mLinkAcch.m_gnd),
                                                      fopAcM_GetRoomNo(this));
+                    field_0x2fc2 = 0;  // restart exit-path index (see above)
                 }
             }
 
             if (isScnChange) {
                 onNoResetFlg0(FLG0_UNK_4000);
 
+#if TARGET_PC
+                // coop: only P1 animates the walk-out-of-area demo. A guest still
+                // records the scene change (so the coop manager reaps it) but must
+                // not drive the shared exit demo — doing so left P1 sliding out of
+                // the zone with no walk animation when a guest was present.
+                if (!isGuest())
+#endif
                 if (!eventInfo.checkCommandDoor()) {
                     mDemo.setOriginalDemoType();
 
