@@ -123,7 +123,20 @@ void daAlink_c::handleQuickTransform() {
     bool canTransform = false;
 
     if (mLinkAcch.ChkGroundHit() && !checkModeFlg(MODE_PLAYER_FLY) && !checkMagneBootsOn()) {
-        if (checkMidnaRide()) {
+        // coop: Midna only ever rides P1 (daMidna_c::execute keys off the P1
+        // singleton), so a guest can never pass checkMidnaRide() and Midna's
+        // per-frame checkMetamorphoseEnable() only describes P1's surroundings.
+        // Guests keep the per-instance mode checks; the shared story gates
+        // above (M_077, checkMetamorphoseEnableBase) still apply.
+        if (isGuest()) {
+            if ((checkWolf() &&
+                 (checkModeFlg(MODE_UNK_1000) || dComIfGp_checkPlayerStatus0(mPlayerNo, 0x10))) ||
+                (!checkWolf() &&
+                 (checkModeFlg(4) || dComIfGp_checkPlayerStatus0(mPlayerNo, 0x10))))
+            {
+                canTransform = true;
+            }
+        } else if (checkMidnaRide()) {
             if ((checkWolf() &&
                  (checkModeFlg(MODE_UNK_1000) || dComIfGp_checkPlayerStatus0(mPlayerNo, 0x10))) ||
                 (!checkWolf() &&

@@ -772,6 +772,26 @@ static void duskExecute() {
         }
     }
 
+    // coop: guests get the same R+Y quick transform on their own pad
+    // (pad channel == player slot). Guest form is purely per-instance —
+    // every story/save write in the transform path is isGuest()-gated
+    // (d_a_alink.cpp / d_a_alink_wolf.inc), so this never touches the save.
+    // Skipped while guests are stashed (cutscenes/menus).
+    if (dusk::coop::isSplitActive()) {
+        for (int i = 1; i < dusk::coop::kMaxPlayers; i++) {
+            if ((mDoCPd_c::getHold(i) & (PAD_TRIGGER_R | PAD_TRIGGER_L)) != PAD_TRIGGER_R ||
+                !mDoCPd_c::getTrigY(i))
+            {
+                continue;
+            }
+            if (const auto guest = dynamic_cast<daAlink_c*>(g_dComIfG_gameInfo.play.getPlayer(i))) {
+                if (guest->isGuest()) {
+                    guest->handleQuickTransform();
+                }
+            }
+        }
+    }
+
     if (dusk::getSettings().game.moonJump && (mDoCPd_c::getHoldR(PAD_1) && mDoCPd_c::getHoldA(PAD_1))) {
         if (const auto link = g_dComIfG_gameInfo.play.getPlayer(0)) {
             link->speed.y = 56.0f;

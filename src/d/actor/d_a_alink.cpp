@@ -17614,6 +17614,12 @@ int daAlink_c::procCrouch() {
 int daAlink_c::procCoMetamorphoseInit() {
     int var_r29 = 0;
 
+#if TARGET_PC
+    // coop: the compulsory metamorphose event runs on the GLOBAL event
+    // manager and would seize control from P1. A guest transform is purely
+    // local, so skip the order and run the proc bare (field_0x3198 == 0 path).
+    if (!isGuest())
+#endif
     if (dComIfGp_getEvent()->isOrderOK()) {
         if (!dComIfGp_event_compulsory(this, NULL, 0xFFFF)) {
             return 0;
@@ -17820,6 +17826,10 @@ int daAlink_c::procCoMetamorphose() {
         mpWlMidnaModel = NULL;
         mProcVar0.field_0x3008 = 1;
 
+#if TARGET_PC
+        // coop: story/save event bit — P1's transform owns it
+        if (!isGuest())
+#endif
         if (mProcVar4.field_0x3010 != 0) {
             dComIfGs_onEventBit(dSv_event_flag_c::F_0776);
         }
@@ -18024,6 +18034,24 @@ int daAlink_c::execute() {
     } else if (checkModeFlg(MODE_VINE_CLIMB) || checkCargoCarry()) {
         shape_angle.y = field_0x3108;
     }
+
+#if TARGET_PC
+    // coop: l_autoUpHeight/l_autoDownHeight are file statics rewritten from
+    // this form's HIO data at changeWolf()/changeLink() time — with mixed
+    // forms (guest wolf while P1 human) whichever player transformed last
+    // would win for BOTH instances. Re-assert this instance's values at the
+    // top of its own execute, before this frame's consumers (posMove,
+    // footBgCheck, proc funcs) read them. Values mirror changeWolf/changeLink
+    // (+0.01f). Solo keeps vanilla behavior.
+    if (dusk::coop::playerCount() > 1) {
+        if (checkWolf()) {
+            l_autoUpHeight = mpHIO->mWolf.mWlWallHang.m.mAutoWalkHeight + 0.01f;
+        } else {
+            l_autoUpHeight = mpHIO->mWallHang.m.auto_walk_height + 0.01f;
+        }
+        l_autoDownHeight = -l_autoUpHeight;
+    }
+#endif
 
     #if VERSION == VERSION_SHIELD_DEBUG
     if (checkWolf()) {

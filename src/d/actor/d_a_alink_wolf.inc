@@ -218,6 +218,11 @@ void daAlink_c::changeWolf() {
 
     mDoExt_setCurrentHeap(current_heap);
 
+#if TARGET_PC
+    // coop: transform status is save-global and means "P1's form" — a guest's
+    // form is per-instance state only and must never leak into the save
+    if (!isGuest())
+#endif
     dComIfGs_setTransformStatus(1);
     mpLinkModel->setUserArea((uintptr_t)this);
     changeModelDataDirectWolf(0);
@@ -416,6 +421,11 @@ void daAlink_c::changeLink(int param_0) {
 
     mDoExt_setCurrentHeap(current_heap);
 
+#if TARGET_PC
+    // coop: transform status is save-global and means "P1's form" — a guest's
+    // form is per-instance state only and must never leak into the save
+    if (!isGuest())
+#endif
     dComIfGs_setTransformStatus(0);
     mpLinkModel->setUserArea((uintptr_t)this);
     mpLinkHatModel->setUserArea((uintptr_t)this);
